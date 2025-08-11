@@ -1,14 +1,13 @@
-QR Logger — v4.1 (Android + Desktop tuned)
-===========================================
+QR Logger — v5 (PWA + Remote)
+===============================
 
-Changes vs v4:
-- Default camera = Auto (phones → back, desktop → front)
-- Windows-friendly camera constraints (prefers 1280×720/1920×1080 @ ~30fps, continuous autofocus when supported)
-- Keeps Android permission flow & banner, device picker, CSV/XLSX import/export, BarcodeDetector→jsQR fallback
+- Installable PWA (manifest + service worker)
+- Two-device Remote Mode via WebRTC DataChannel (manual copy/paste or QR handshake; STUN: stun.l.google.com:19302)
 
-Deploy (GitHub Pages):
-1) Replace your repo's index.html with this file; commit & push.
-2) Open https://<username>.github.io/<repo>/ in Chrome/Edge.
-3) On Android: tap Request Permission → Allow → Start Camera.
+Deploy on GitHub Pages:
+1) Upload all files, keep structure (icons/ folder).
+2) Wait ~1–2 minutes for Pages to update.
+3) Visit your Pages URL. Use **Install App** to install PWA.
+4) Remote mode: Host (PC) Create Offer → Phone Apply Offer → Phone provides Answer → Host Apply Answer.
 
-Built: 2025-08-11T18:04:51.235508Z
+Built: 2025-08-11T18:26:57.793082Z

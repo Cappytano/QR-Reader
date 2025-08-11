@@ -3,51 +3,53 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR Logger — v4.1 (Android + Desktop tuned)</title>
+  <title>QR Logger — v5 (PWA + Remote)</title>
   <meta name="theme-color" content="#0f172a"/>
+  <link rel="manifest" href="manifest.webmanifest"/>
+  <link rel="icon" href="icons/icon-192.png"/>
   <style>
     :root{--bg:#0b1220;--panel:#0f172a;--muted:#94a3b8;--text:#e2e8f0;--accent:#22c55e;--border:#1f2937;--radius:16px}
     *{box-sizing:border-box}html,body{height:100%}
     body{margin:0;background:radial-gradient(1200px 800px at 10% -10%, #0c152a, var(--bg) 40%);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
     header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
-    h1{font-size:22px;margin:0}
-    .subtitle{color:var(--muted);font-size:13px;margin-top:2px}
-    .grid{display:grid;gap:16px;grid-template-columns:1fr}
-    @media(min-width:980px){.grid{grid-template-columns:420px 1fr}}
+    h1{font-size:22px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-top:2px}
+    .grid{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:980px){.grid{grid-template-columns:420px 1fr}}
     .card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:var(--radius)}
     .card .content{padding:16px}
     .video-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
-    video{width:100%;height:auto;display:block}
-    .frame{position:absolute;inset:0;border:2px dashed rgba(255,255,255,.25);border-radius:12px;pointer-events:none}
+    video{width:100%;display:block}.frame{position:absolute;inset:0;border:2px dashed rgba(255,255,255,.25);border-radius:12px;pointer-events:none}
     .controls{display:flex;gap:8px;flex-wrap:wrap}.controls>*{flex:1 1 auto}
-    button,select,input[type="text"]{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
+    button,select,input,textarea{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
     button{cursor:pointer}
     button.primary{background:linear-gradient(180deg,#1f7a3b,#14532d);border-color:#134e4a}
     button.secondary{background:linear-gradient(180deg,#0b2a64,#0b1f3a);border-color:#0b1f3a}
-    .status{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}
-    .muted{color:var(--muted);font-size:12px}
+    .status{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}.muted{color:var(--muted);font-size:12px}
     .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#0b2a64;border:1px solid #0b1f3a;color:#cfe1ff}
-    .warn{background:#78350f;border:1px solid #5a2e0b;color:#ffd08a}
-    .hidden{display:none!important}
     .banner{margin:12px 0;padding:10px 12px;border-radius:12px;border:1px solid #43320b;background:linear-gradient(180deg,rgba(255,170,0,.12),rgba(255,170,0,.06));color:#ffdd9a}
-    table{width:100%;border-collapse:collapse}
-    thead th{position:sticky;top:0;background:#0e172a;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:.06em;color:#93a3b8;padding:10px 8px;text-align:left}
+    table{width:100%;border-collapse:collapse}thead th{position:sticky;top:0;background:#0e172a;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:.06em;color:#93a3b8;padding:10px 8px;text-align:left}
     tbody td{border-bottom:1px solid var(--border);padding:8px;vertical-align:top;font-size:14px}
-    .note-cell[contenteditable="true"]{outline:1px dashed rgba(255,255,255,.15)}
-    .count{display:inline-flex;gap:6px;background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:2px 8px;font-size:12px}
+    .note-cell[contenteditable="true"]{outline:1px dashed rgba(255,255,255,.15)}.count{display:inline-flex;gap:6px;background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:2px 8px;font-size:12px}
   </style>
 </head>
 <body>
   <header>
     <div class="wrap">
-      <h1>QR Logger</h1>
-      <div class="subtitle">Android + Windows tuned build</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div>
+          <h1>QR Logger</h1>
+          <div class="subtitle">PWA + Two-device Remote Mode</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="installBtn" class="secondary" style="display:none">Install App</button>
+          <button id="remoteToggle" class="secondary">Remote Mode</button>
+        </div>
     </div>
+  </div>
   </header>
 
   <main class="wrap">
-    <div id="androidBanner" class="banner hidden"></div>
+    <div id="androidBanner" class="banner" style="display:none"></div>
 
     <div class="grid">
       <section class="card">
@@ -56,7 +58,7 @@
           <div class="video-wrap">
             <video id="video" playsinline muted></video>
             <div class="frame"></div>
-            <canvas id="canvas" class="hidden"></canvas>
+            <canvas id="canvas" style="display:none"></canvas>
           </div>
 
           <div class="controls" style="margin-top:12px">
@@ -93,8 +95,8 @@
             <button id="exportXlsx" class="primary">Export Excel (.xlsx)</button>
             <button id="exportCsv" class="secondary">Export CSV</button>
             <button id="importFileBtn" class="secondary">Import</button>
-            <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" class="hidden"/>
-            <button id="clearBtn" class="secondary warn" title="Clear all rows">Clear</button>
+            <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" style="display:none"/>
+            <button id="clearBtn" class="secondary">Clear</button>
           </div>
 
           <div class="card" style="max-height:55vh;overflow:auto">
@@ -110,196 +112,105 @@
         </div>
       </section>
     </div>
+
+    <section id="remotePanel" class="card" style="margin-top:16px;display:none">
+      <div class="content">
+        <h2 style="margin:0 0 10px 0">Remote Mode (two-device)</h2>
+        <div class="controls" style="margin-bottom:8px">
+          <select id="role"><option value="host" selected>Host (PC)</option><option value="camera">Camera (phone)</option></select>
+          <button id="startRole" class="primary">Start</button>
+          <span id="remoteStatus" class="muted"></span>
+        </div>
+        <div id="hostUI" style="display:none">
+          <h3>Step 1 — Create Offer (Host)</h3>
+          <div style="display:flex;gap:8px"><button id="createOffer" class="secondary">Create Offer</button><button id="copyOffer" class="secondary">Copy</button></div>
+          <textarea id="offerText" rows="5" placeholder="Offer will appear here"></textarea>
+          <canvas id="offerQR" width="256" height="256" style="background:#fff;border-radius:10px;margin-top:8px"></canvas>
+          <p class="muted">If the QR looks truncated, use copy/paste.</p>
+          <h3 style="margin-top:12px">Step 2 — Paste Answer</h3>
+          <div><button id="applyAnswer" class="secondary">Apply Answer</button></div>
+          <textarea id="answerText" rows="5" placeholder="Paste the answer from the phone"></textarea>
+        </div>
+        <div id="cameraUI" style="display:none">
+          <h3>Step 1 — Enter/Scan Offer</h3>
+          <div style="display:flex;gap:8px"><button id="scanOffer" class="secondary">Scan Offer QR</button><button id="applyOffer" class="secondary">Apply Offer</button></div>
+          <textarea id="offerInput" rows="5" placeholder="Paste or scan the host offer"></textarea>
+          <h3 style="margin-top:12px">Step 2 — Send Answer</h3>
+          <div><button id="copyAnswerCam" class="secondary">Copy</button></div>
+          <textarea id="answerOut" rows="5" placeholder="Answer will appear here"></textarea>
+          <canvas id="answerQR" width="256" height="256" style="background:#fff;border-radius:10px;margin-top:8px"></canvas>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <script>
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(console.error);
+  let deferredPrompt; const installBtn=document.getElementById('installBtn');
+  window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt=e; installBtn.style.display='inline-block'; });
+  installBtn?.addEventListener('click', async()=>{ if(!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; installBtn.style.display='none'; });
+
   (()=>{
-    const $ = s => document.querySelector(s);
-    const video = $('#video');
-    const canvas = $('#canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently:true });
-    const statusEl = $('#status');
-    const cameraSelect = $('#cameraSelect');
-    const prefFacing = $('#prefFacing');
-    const scanEnginePill = $('#scanEngine');
-    const permStateEl = $('#permState');
-    const androidBanner = $('#androidBanner');
-
-    let stream = null, scanning = false, detector = null, usingBarcodeDetector=false, scanRAF=0;
-    let data = []; const STORAGE_KEY = 'qrLoggerV1';
-
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    const isWindows = /Windows NT/i.test(navigator.userAgent);
-    const isInApp = /FBAN|FBAV|Instagram|Line\/|WeChat|Twitter|Snapchat|DuckDuckGo/i.test(navigator.userAgent);
-
-    function setStatus(t){ statusEl.textContent = t || ''; }
+    const $=s=>document.querySelector(s);
+    const video=$('#video'), canvas=$('#canvas'), ctx=canvas.getContext('2d',{willReadFrequently:true});
+    const statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing');
+    const scanEnginePill=$('#scanEngine'), permStateEl=$('#permState'), androidBanner=$('#androidBanner');
+    const isAndroid=/Android/i.test(navigator.userAgent); const isInApp=/FBAN|FBAV|Instagram|Line\\/|WeChat|Twitter|Snapchat|DuckDuckGo/i.test(navigator.userAgent);
+    let stream=null, scanning=false, detector=null, usingBarcodeDetector=false, scanRAF=0; let data=[]; const STORAGE_KEY='qrLoggerV1';
+    function setStatus(t){ statusEl.textContent=t||''; }
     function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
-    function load(){ try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch{ data=[]; } }
-
-    function showAndroidBanner(){
-      if(!/Android/i.test(navigator.userAgent)) return;
-      const host = location.hostname;
-      let msg = '<b>Android tip:</b> ';
-      msg += isInApp ? 'You appear to be in an in‑app browser. Those often block camera. Tap the menu and choose <b>Open in Chrome</b>.' :
-                      'If no prompt appears, tap the ⓘ/🔒 icon → <b>Permissions</b> → <b>Camera → Allow</b>, then reload.';
-      msg += '<br/>System: Settings → Apps → <b>Chrome</b> → Permissions → Camera → Allow.';
-      msg += '<br/>Site reset: Chrome ⋮ → Settings → Site settings → All sites → <b>'+host+'</b> → Clear & reset.';
-      androidBanner.innerHTML = msg; androidBanner.classList.remove('hidden');
-    }
-
-    async function updatePerm(){
-      permStateEl.textContent = '';
-      if(!('permissions' in navigator)) return;
-      try{
-        const st = await navigator.permissions.query({ name:'camera' });
-        permStateEl.textContent = 'Permission: ' + st.state;
-        st.onchange = () => permStateEl.textContent = 'Permission: ' + st.state;
-      }catch{}
-    }
-
-    function decideFacing(){
-      const pref = prefFacing.value;
-      if (pref==='environment') return { facingMode:{ ideal:'environment' } };
-      if (pref==='user') return { facingMode:{ ideal:'user' } };
-      return isAndroid ? { facingMode:{ ideal:'environment' } } : { facingMode:{ ideal:'user' } };
-    }
-
-    async function enumerateCams(){
-      try{
-        const devs = await navigator.mediaDevices.enumerateDevices();
-        const cams = devs.filter(d=>d.kind==='videoinput');
-        cameraSelect.innerHTML='';
-        if(!cams.length){
-          const o=document.createElement('option'); o.value=''; o.textContent='No cameras detected'; cameraSelect.appendChild(o);
-          return cams;
-        }
-        cams.forEach((c,i)=>{ const o=document.createElement('option'); o.value=c.deviceId||''; o.textContent=c.label||('Camera '+(i+1)); cameraSelect.appendChild(o); });
-        return cams;
-      }catch(e){ setStatus('enumerateDevices failed: '+e.message); return []; }
-    }
-
-    async function requestPermission(){
-      try{
-        setStatus('Requesting camera permission…');
-        const s = await navigator.mediaDevices.getUserMedia({ video: decideFacing(), audio:false });
-        s.getTracks().forEach(t=>t.stop());
-        setStatus('Permission granted.');
-      }catch(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); showAndroidBanner(); }
-      await updatePerm(); await enumerateCams();
-    }
-
-    async function applyWindowsOptimizedConstraints(track){
-      if (!track?.applyConstraints) return;
-      try{
-        const caps = track.getCapabilities?.() || {};
-        const cons = { advanced: [] };
-        cons.advanced.push({ width:{ ideal: Math.min(1920, caps.width?.max || 1920) }, height:{ ideal: Math.min(1080, caps.height?.max || 1080) } });
-        cons.advanced.push({ frameRate:{ ideal: Math.min(30, caps.frameRate?.max || 30) } });
-        if (caps.focusMode && caps.focusMode.includes('continuous')) cons.advanced.push({ focusMode:'continuous' });
-        await track.applyConstraints(cons);
-      }catch(e){ console.warn('applyConstraints failed:', e); }
-    }
-
-    async function startFromSelection(){
-      let errors=[];
-      async function attempt(video){
-        try{
-          stop(); setStatus('Starting camera…');
-          const s = await navigator.mediaDevices.getUserMedia({ video: { width:{ideal:1280}, height:{ideal:720}, ...video }, audio:false });
-          stream=s; const track = stream.getVideoTracks()[0];
-          await applyWindowsOptimizedConstraints(track);
-          videoElOn(); return true;
-        }catch(e){ errors.push(e.name+': '+e.message); return false; }
-      }
-      const id = cameraSelect.value;
-      if(id && await attempt({ deviceId:{ exact:id } })) return true;
-      if(await attempt(decideFacing())) return true;
-      const opposite = prefFacing.value==='user' ? { facingMode:{ ideal:'environment' } } : { facingMode:{ ideal:'user' } };
-      if(await attempt(opposite)) return true;
-      if(await attempt(true)) return true;
-      setStatus('Failed to start camera. '+errors.join(' | ')); showAndroidBanner(); return false;
-    }
-
-    function videoElOn(){
-      video.srcObject = stream; video.play().then(()=>{
-        const track = stream.getVideoTracks()[0]; const s = track.getSettings();
-        setStatus(`Camera started (${s.width}×${s.height}${s.frameRate?` @ ~${s.frameRate}fps`:''})`);
-        enumerateCams(); initScanner();
-      }).catch(e=> setStatus('Video play failed: '+e.message));
-    }
-
+    function load(){ try{ data=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch{ data=[]; } }
+    function showAndroidBanner(){ if(!isAndroid) return; const host=location.hostname; let msg='<b>Android tip:</b> '; msg+=isInApp?'In-app browsers often block camera. Use <b>Open in Chrome</b>.':'If no prompt: tap ⓘ/🔒 → <b>Permissions</b> → <b>Camera → Allow</b>.'; msg+='<br/>System: Settings → Apps → <b>Chrome</b> → Permissions → Camera → Allow.'; msg+='<br/>Site reset: Chrome ⋮ → Settings → Site settings → All sites → <b>'+host+'</b> → Clear & reset.'; androidBanner.innerHTML=msg; androidBanner.style.display='block'; }
+    async function updatePerm(){ permStateEl.textContent=''; if(!('permissions' in navigator)) return; try{ const st=await navigator.permissions.query({name:'camera'}); permStateEl.textContent='Permission: '+st.state; st.onchange=()=> permStateEl.textContent='Permission: '+st.state; }catch{} }
+    function decideFacing(){ const p=prefFacing.value; if(p==='environment') return {facingMode:{ideal:'environment'}}; if(p==='user') return {facingMode:{ideal:'user'}}; return isAndroid?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; }
+    async function enumerateCams(){ try{ const devs=await navigator.mediaDevices.enumerateDevices(); const cams=devs.filter(d=>d.kind==='videoinput'); cameraSelect.innerHTML=''; if(!cams.length){ const o=document.createElement('option'); o.value=''; o.textContent='No cameras detected'; cameraSelect.appendChild(o); return cams; } cams.forEach((c,i)=>{ const o=document.createElement('option'); o.value=c.deviceId||''; o.textContent=c.label||('Camera '+(i+1)); cameraSelect.appendChild(o); }); return cams; }catch(e){ setStatus('enumerateDevices failed: '+e.message); return []; }
+    async function requestPermission(){ try{ setStatus('Requesting camera permission…'); const s=await navigator.mediaDevices.getUserMedia({video:decideFacing(),audio:false}); s.getTracks().forEach(t=>t.stop()); setStatus('Permission granted.'); }catch(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); showAndroidBanner(); } await updatePerm(); await enumerateCams(); }
+    async function startFromSelection(){ let errors=[]; async function attempt(v){ try{ stop(); setStatus('Starting camera…'); const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},...v},audio:false}); stream=s; videoElOn(); return true; }catch(e){ errors.push(e.name+': '+e.message); return false; } } const id=cameraSelect.value; if(id && await attempt({deviceId:{exact:id}})) return true; if(await attempt(decideFacing())) return true; const opp=prefFacing.value==='user'?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; if(await attempt(opp)) return true; if(await attempt(true)) return true; setStatus('Failed to start camera. '+errors.join(' | ')); showAndroidBanner(); return false; }
+    function videoElOn(){ video.srcObject=stream; video.play().then(()=>{ const t=stream.getVideoTracks()[0]; const s=t.getSettings(); setStatus(`Camera started (${s.width}×${s.height})`); enumerateCams(); initScanner(); }).catch(e=> setStatus('Video play failed: '+e.message)); }
     function stop(){ cancelAnimationFrame(scanRAF); scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
-
-    async function initScanner(){
-      usingBarcodeDetector = 'BarcodeDetector' in window;
-      if(usingBarcodeDetector){
-        try{ detector = new BarcodeDetector({ formats:['qr_code'] }); scanEnginePill.textContent='Engine: BarcodeDetector'; scanning=true; scanLoopDetector(); return; }
-        catch{ usingBarcodeDetector=false; }
-      }
-      scanEnginePill.textContent='Engine: jsQR'; scanning=true; scanLoopJsQR();
-    }
-
-    async function scanLoopDetector(){
-      if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopDetector); return; }
-      try{
-        const bitmap = await createImageBitmap(video); const codes = await detector.detect(bitmap);
-        if(codes && codes.length){ upsert(codes[0].rawValue, codes[0].format||'qr_code', 'camera'); await new Promise(r=>setTimeout(r,350)); }
-      }catch{}
-      scanRAF = requestAnimationFrame(scanLoopDetector);
-    }
-
-    function scanLoopJsQR(){
-      if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; }
-      const w=video.videoWidth, h=video.videoHeight; if(!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; }
-      canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h);
-      try{ const id=ctx.getImageData(0,0,w,h); const q=jsQR(id.data,w,h,{ inversionAttempts:'dontInvert' }); if(q && q.data){ upsert(q.data,'qr_code','camera'); setTimeout(()=>{ scanRAF=requestAnimationFrame(scanLoopJsQR); },350); return; } }catch{}
-      scanRAF=requestAnimationFrame(scanLoopJsQR);
-    }
-
-    const tbody = $('#logBody');
-    function render(){ tbody.innerHTML=''; data.forEach((r,i)=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML = `<td class="muted">${i+1}</td><td>${escapeHtml(r.content)}</td><td><span class="pill">${r.format||'QR'}</span></td><td class="muted">${r.source||'camera'}</td><td class="muted">${new Date(r.timestamp).toLocaleString()}</td><td><span class="count">× ${r.count||1}</span></td><td class="note-cell" contenteditable="true">${escapeHtml(r.notes||'')}</td><td><button class="small" data-act="edit">Edit</button> <button class="small" data-act="delete">Delete</button></td>`;
-      tr.dataset.id=r.id; tbody.appendChild(tr);
-    }); }
-    function escapeHtml(s){ return (s??'').toString().replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
-    function upsert(content, format='qr_code', source='camera'){
-      if(!content) return; const now=new Date().toISOString();
-      const ex=data.find(x=>x.content===content); if(ex){ ex.count=(ex.count||1)+1; ex.timestamp=now; save(); render(); beep(); return; }
-      data.unshift({ id:crypto.randomUUID(), content, format, source, timestamp:now, count:1, notes:'' }); save(); render(); beep();
-    }
-
-    document.addEventListener('click', (e)=>{
-      const btn = e.target.closest('button'); if(!btn) return; const tr = e.target.closest('tr');
-      const id = tr?.dataset?.id; const act = btn.dataset.act;
-      if(act==='delete' && id){ data = data.filter(r=>r.id!==id); save(); render(); }
-      if(act==='edit' && id){ const row = data.find(r=>r.id===id); const nv = prompt('Edit QR content:', row.content); if(nv!==null){ row.content=nv; save(); render(); } }
-    });
+    async function initScanner(){ usingBarcodeDetector='BarcodeDetector' in window; if(usingBarcodeDetector){ try{ detector=new BarcodeDetector({formats:['qr_code']}); scanEnginePill.textContent='Engine: BarcodeDetector'; scanning=true; return scanLoopDetector(); }catch{ usingBarcodeDetector=false; } } scanEnginePill.textContent='Engine: jsQR'; scanning=true; scanLoopJsQR(); }
+    async function scanLoopDetector(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopDetector); return; } try{ const bmp=await createImageBitmap(video); const codes=await detector.detect(bmp); if(codes && codes.length){ onScan(codes[0].rawValue,'qr_code','camera'); await new Promise(r=>setTimeout(r,350)); } }catch{} scanRAF=requestAnimationFrame(scanLoopDetector); }
+    function scanLoopJsQR(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } const w=video.videoWidth,h=video.videoHeight; if(!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ const id=ctx.getImageData(0,0,w,h); const q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q && q.data){ onScan(q.data,'qr_code','camera'); setTimeout(()=>{ scanRAF=requestAnimationFrame(scanLoopJsQR); },350); return; } }catch{} scanRAF=requestAnimationFrame(scanLoopJsQR); }
+    const tbody=$('#logBody'); function render(){ tbody.innerHTML=''; data.forEach((r,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td class="muted">${i+1}</td><td>${esc(r.content)}</td><td><span class="pill">${r.format||'QR'}</span></td><td class="muted">${r.source||'camera'}</td><td class="muted">${new Date(r.timestamp).toLocaleString()}</td><td><span class="count">× ${r.count||1}</span></td><td class="note-cell" contenteditable="true">${esc(r.notes||'')}</td><td><button class="small" data-act="edit">Edit</button> <button class="small" data-act="delete">Delete</button></td>`; tr.dataset.id=r.id; tbody.appendChild(tr); }); }
+    function esc(s){ return (s??'').toString().replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function upsert(content,format='qr_code',source='camera'){ if(!content) return; const now=new Date().toISOString(); const ex=data.find(x=>x.content===content); if(ex){ ex.count=(ex.count||1)+1; ex.timestamp=now; save(); render(); beep(); return; } data.unshift({id:crypto.randomUUID(),content,format,source,timestamp:now,count:1,notes:''}); save(); render(); beep(); }
+    document.addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b) return; const tr=e.target.closest('tr'); const id=tr?.dataset?.id; const act=b.dataset.act; if(act==='delete'&&id){ data=data.filter(r=>r.id!==id); save(); render(); } if(act==='edit'&&id){ const row=data.find(r=>r.id===id); const nv=prompt('Edit QR content:',row.content); if(nv!==null){ row.content=nv; save(); render(); } } });
     document.addEventListener('blur',(e)=>{ const c=e.target; if(!c.classList.contains('note-cell')) return; const tr=c.closest('tr'); const row=data.find(r=>r.id===tr.dataset.id); if(row){ row.notes=c.textContent; save(); } }, true);
+    const manualInput=$('#manualInput'); $('#addManualBtn').addEventListener('click',()=>{ const v=manualInput.value.trim(); if(v) onScan(v,'text','manual/keyboard'); manualInput.value=''; }); manualInput.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=manualInput.value.trim(); if(v) onScan(v,'text','manual/keyboard'); manualInput.value=''; } });
+    $('#exportCsv').addEventListener('click',()=>{ const rows=[["QR Content","Format","Source","Timestamp","Count","Notes"],...data.map(r=>[r.content,r.format,r.source,r.timestamp,r.count,r.notes||''])]; const csv=rows.map(r=>r.map(f=>{ const s=(f??'').toString().replaceAll('"','""'); return /[",\n]/.test(s)?`"${s}"`:s; }).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`qr-log-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`; a.click(); URL.revokeObjectURL(a.href); });
+    $('#exportXlsx').addEventListener('click',()=>{ const ws=XLSX.utils.json_to_sheet(data.map(r=>({"QR Content":r.content,"Format":r.format,"Source":r.source,"Timestamp":r.timestamp,"Count":r.count,"Notes":r.notes||''}))); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'QR Log'); XLSX.writeFile(wb,`qr-log-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.xlsx`); });
+    $('#importFileBtn').addEventListener('click',()=>$('#fileInput').click()); $('#fileInput').addEventListener('change',async(e)=>{ const f=e.target.files[0]; if(!f) return; const n=f.name.toLowerCase(); if(n.endswith('.csv')){ const t=await f.text(); const rows=t.split(/\r?\n/).map(r=>r.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/)); const [h,...b]=rows; b.forEach(cols=>{ if(!cols.length||!cols[0])return; onScan(cols[0].replaceAll('\\"','"'),'text','import'); const last=data[0]; last.timestamp=cols[3]||new Date().toISOString(); last.count=parseInt(cols[4]||'1',10); last.notes=(cols[5]||'').replace(/^"|"$/g,''); }); } else { const buf=await f.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; const rows=XLSX.utils.sheet_to_json(ws); rows.forEach(o=>{ onScan(o['QR Content'],o['Format']||'qr_code','import'); const last=data[0]; last.timestamp=o['Timestamp']||new Date().toISOString(); last.count=parseInt(o['Count']||'1',10); last.notes=o['Notes']||''; }); } save(); render(); setStatus('Imported data from file.'); e.target.value=''; });
 
-    const manualInput = $('#manualInput');
-    $('#addManualBtn').addEventListener('click', ()=>{ const v=manualInput.value.trim(); if(v) upsert(v,'text','manual/keyboard'); manualInput.value=''; });
-    manualInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); const v=manualInput.value.trim(); if(v) upsert(v,'text','manual/keyboard'); manualInput.value=''; } });
+    // Remote mode
+    const remoteToggle=$('#remoteToggle'); const remotePanel=$('#remotePanel'); const roleSel=$('#role'); const startRole=$('#startRole'); const remoteStatus=$('#remoteStatus');
+    const hostUI=$('#hostUI'), cameraUI=$('#cameraUI');
+    const createOfferBtn=$('#createOffer'), copyOfferBtn=$('#copyOffer'), offerText=$('#offerText'), offerQR=$('#offerQR');
+    const applyAnswerBtn=$('#applyAnswer'), answerText=$('#answerText');
+    const scanOfferBtn=$('#scanOffer'), applyOfferBtn=$('#applyOffer'), offerInput=$('#offerInput');
+    const copyAnswerCamBtn=$('#copyAnswerCam'), answerOut=$('#answerOut'), answerQR=$('#answerQR');
+    let pc=null, dc=null, role='host', remoteActive=false; const iceServers=[{urls:'stun:stun.l.google.com:19302'}];
+    remoteToggle.addEventListener('click',()=>{ remotePanel.style.display = remotePanel.style.display==='none'?'block':'none'; });
+    roleSel.addEventListener('change',()=>{ role=roleSel.value; renderRole(); }); function renderRole(){ hostUI.style.display = role==='host'?'block':'none'; cameraUI.style.display = role==='camera'?'block':'none'; } renderRole();
+    startRole.addEventListener('click', ()=>{ setupPeer(); setRemoteStatus('Ready. Follow the steps below.'); });
+    function setRemoteStatus(t){ remoteStatus.textContent=t||''; }
+    function encode(obj){ return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
+    function decode(str){ return JSON.parse(decodeURIComponent(escape(atob(str.trim())))); }
+    function setupPeer(){ if(pc) try{ pc.close(); }catch{} pc=new RTCPeerConnection({iceServers}); pc.oniceconnectionstatechange=()=> setRemoteStatus('ICE: '+pc.iceConnectionState); if(role==='host'){ dc=pc.createDataChannel('qrlog'); wireDC(dc); } else { pc.ondatachannel=(ev)=>{ dc=ev.channel; wireDC(dc); }; } pc.onicegatheringstatechange=()=>{ if(pc.iceGatheringState==='complete' && role==='host') tryRenderOffer(); if(pc.iceGatheringState==='complete' && role==='camera') tryRenderAnswer(); }; }
+    function wireDC(ch){ ch.onopen=()=>{ setRemoteStatus('Connected'); }; ch.onclose=()=> setRemoteStatus('Disconnected'); ch.onmessage=(ev)=>{ try{ const msg=JSON.parse(ev.data); if(msg.type==='qr'){ upsert(msg.content, msg.format||'qr_remote', msg.source||'remote'); } }catch(e){ console.warn('bad msg',e); } }; }
+    async function tryRenderOffer(){ if(!pc?.localDescription) return; offerText.value=encode(pc.localDescription); const s=offerText.value; try{ QRCode.toCanvas(offerQR, s.length>2950?s.slice(0,2950):s); }catch(e){} }
+    async function tryRenderAnswer(){ if(!pc?.localDescription) return; answerOut.value=encode(pc.localDescription); const s=answerOut.value; try{ QRCode.toCanvas(answerQR, s.length>2950?s.slice(0,2950):s); }catch(e){} }
+    createOfferBtn.addEventListener('click', async()=>{ if(!pc) setupPeer(); const offer=await pc.createOffer(); await pc.setLocalDescription(offer); setRemoteStatus('Gathering ICE…'); });
+    copyOfferBtn.addEventListener('click', ()=> navigator.clipboard.writeText(offerText.value));
+    applyAnswerBtn.addEventListener('click', async()=>{ try{ const obj=decode(answerText.value); await pc.setRemoteDescription(obj); setRemoteStatus('Answer applied. Connecting…'); }catch{ alert('Bad answer'); } });
+    applyOfferBtn.addEventListener('click', async()=>{ try{ if(!pc) setupPeer(); const obj=decode(offerInput.value); await pc.setRemoteDescription(obj); const ans=await pc.createAnswer(); await pc.setLocalDescription(ans); setRemoteStatus('Gathering ICE…'); }catch{ alert('Bad offer'); } });
+    scanOfferBtn.addEventListener('click', async()=>{ try{ await requestPermission(); await startFromSelection(); setStatus('Point camera at the host Offer QR…'); const scanOnce=()=>{ const w=video.videoWidth,h=video.videoHeight; if(!w||!h){ requestAnimationFrame(scanOnce); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ const id=ctx.getImageData(0,0,w,h); const q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q && q.data){ offerInput.value=q.data; stop(); setStatus('Offer QR captured. Tap Apply Offer.'); } }catch{} requestAnimationFrame(scanOnce); }; requestAnimationFrame(scanOnce); }catch{ alert('Unable to access camera to scan offer.'); } });
+    copyAnswerCamBtn.addEventListener('click', ()=> navigator.clipboard.writeText(answerOut.value));
+    function onScan(content, format='qr_code', source='camera'){ if(role==='camera' && dc && dc.readyState==='open'){ try{ dc.send(JSON.stringify({type:'qr', content, format, source:'remote-camera'})); }catch{} upsert(content, format, 'remote-local'); } else { upsert(content, format, source); } }
 
-    $('#exportCsv').addEventListener('click', ()=>{
-      const rows = [["QR Content","Format","Source","Timestamp","Count","Notes"], ...data.map(r=>[r.content,r.format,r.source,r.timestamp,r.count,r.notes||''])];
-      const csv = rows.map(r=>r.map(f=>{ const s=(f??'').toString().replaceAll('"','""'); return /[",\n]/.test(s)?`"${s}"`:s; }).join(',')).join('\n');
-      const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`qr-log-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`; a.click(); URL.revokeObjectURL(a.href);
-    });
-    $('#exportXlsx').addEventListener('click', ()=>{
-      const ws = XLSX.utils.json_to_sheet(data.map(r=>({"QR Content":r.content,"Format":r.format,"Source":r.source,"Timestamp":r.timestamp,"Count":r.count,"Notes":r.notes||''}))));
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'QR Log'); XLSX.writeFile(wb, `qr-log-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.xlsx`);
-    });
-    $('#importFileBtn').addEventListener('click', ()=>$('#fileInput').click());
-    $('#fileInput').addEventListener('change', async (e)=>{
-      const file=e.target.files[0]; if(!file) return; const name=file.name.toLowerCase();
-      if(name.endsWith('.csv')){ const text=await file.text(); const rows=text.split(/\r?\n/).map(r=>r.split(/,(?=(?:[^"]*"[^\"]*")*[^\"]*$)/)); const [h,...b]=rows; b.forEach(cols=>{ if(!cols.length||!cols[0])return; upsert(cols[0].replaceAll('\"','"'), cols[1]||'qr_code', cols[2]||'import'); const last=data[0]; last.timestamp=cols[3]||new Date().toISOString(); last.count=parseInt(cols[4]||'1',10); last.notes=(cols[5]||'').replace(/^"|"$/g,''); }); }
-      else{ const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; const rows=XLSX.utils.sheet_to_json(ws); rows.forEach(o=>{ upsert(o['QR Content'], o['Format']||'qr_code', o['Source']||'import'); const last=data[0]; last.timestamp=o['Timestamp']||new Date().toISOString(); last.count=parseInt(o['Count']||'1',10); last.notes=o['Notes']||''; }); }
-      save(); render(); setStatus('Imported data from file.'); e.target.value='';
-    });
-
+    // Buttons
     $('#permBtn').addEventListener('click', requestPermission);
     $('#startBtn').addEventListener('click', startFromSelection);
     $('#stopBtn').addEventListener('click', ()=>{ stop(); setStatus('Camera stopped.'); });
