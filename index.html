@@ -219,7 +219,7 @@
 
     load(); render(); updatePerm(); enumerateCams(); showAndroidBanner();
     if(document.visibilityState==='visible') setStatus('Ready. Request Permission → Start Camera.');
-  })();
+  }();
 
   function beep(){ try{ const a=new AudioContext(), o=a.createOscillator(), g=a.createGain(); o.type='square'; o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.05,a.currentTime); o.start(); setTimeout(()=>{o.stop(); a.close();},90);}catch{} }
   </script>
