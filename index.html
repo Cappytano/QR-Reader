@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR Logger — v5.1 (PWA + Remote + Pair Code) — Patched + A11y</title>
+  <title>QR Logger — v5.2 (PWA + Remote + ROI + Torch + Overlay)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -19,7 +19,7 @@
     .card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:var(--radius)}
     .card .content{padding:16px}
     .video-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
-    video{width:100%;display:block}
+    video{width:100%;display:block;transform:scaleX(1)}
     .frame{position:absolute;inset:0;border:2px dashed rgba(255,255,255,.25);border-radius:12px;pointer-events:none}
     .controls{display:flex;gap:8px;flex-wrap:wrap}.controls>*{flex:1 1 auto}
     button,select,input,textarea{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
@@ -41,9 +41,9 @@
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR Logger</h1>
-        <div class="subtitle">PWA + Two‑Device Remote + Pair by Code (Patched + A11y)</div>
+        <div class="subtitle">v5.2 — PWA • Two‑Device Remote • ROI/Overlay • Torch • Zoom • A11y</div>
       </div>
-      <div style="display:flex;gap:8px;min-width:260px">
+      <div style="display:flex;gap:8px;min-width:320px">
         <button id="installBtn" class="secondary" style="display:none">Install App</button>
         <button id="remoteToggle" class="secondary">Remote Mode</button>
       </div>
@@ -58,8 +58,9 @@
         <h2 style="margin:0 0 10px 0">Scanner</h2>
         <div class="video-wrap">
           <video id="video" playsinline webkit-playsinline muted></video>
-          <div class="frame" aria-hidden="true"></div>
           <canvas id="canvas" style="display:none"></canvas>
+          <canvas id="overlay" style="position:absolute;inset:0;pointer-events:none"></canvas>
+          <div class="frame" aria-hidden="true"></div>
         </div>
         <div class="controls" style="margin-top:12px">
           <button id="permBtn" class="secondary">Request Permission</button>
@@ -76,7 +77,18 @@
             <option value="user">Prefer Front</option>
             <option value="auto" selected>Auto</option>
           </select>
+          <label class="sr-only" for="roi">Scan area</label>
+          <select id="roi" title="Scan area" aria-label="Scan area">
+            <option value="center" selected>Center square</option>
+            <option value="full">Full frame</option>
+          </select>
           <span id="scanEngine" class="pill" aria-live="polite">Engine: Detecting…</span>
+        </div>
+        <div class="controls" style="margin-top:8px">
+          <button id="torchBtn" class="secondary">Torch</button>
+          <button id="zoomIn" class="secondary">Zoom +</button>
+          <button id="zoomOut" class="secondary">Zoom −</button>
+          <button id="flipBtn" class="secondary">Flip (mirror)</button>
         </div>
         <div class="controls" style="margin-top:8px">
           <label class="sr-only" for="manualInput">Manual QR entry</label>
@@ -155,7 +167,7 @@
         </div>
         <div class="muted" id="codeStatus" aria-live="polite"></div>
       </div></div>
-    </div></section>
+    </section>
   </main>
 
   <!-- Libs -->
@@ -169,20 +181,20 @@
 
   <script>
   if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch(e){} }
-  let deferredPrompt; const installBtn=document.getElementById('installBtn');
+  var deferredPrompt; var installBtn=document.getElementById('installBtn');
   window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt=e; if(installBtn) installBtn.style.display='inline-block'; });
   if(installBtn){ installBtn.addEventListener('click', function(){ if(!deferredPrompt) return; deferredPrompt.prompt(); deferredPrompt=null; installBtn.style.display='none'; }); }
 
-  if(!String.prototype.replaceAll){ String.prototype.replaceAll=function(find, replace){ return this.split(find).join(replace); }; }
-  if(!window.crypto || !window.crypto.randomUUID){ window.crypto = window.crypto || {}; crypto.randomUUID = function(){ return 'id-'+Math.random().toString(36).slice(2)+Date.now(); }; }
-
   (function(){
     var $ = function(s){ return document.querySelector(s); };
-    var video=$('#video'), canvas=$('#canvas'); var ctx=canvas.getContext('2d',{willReadFrequently:true});
-    var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing');
+    var video=$('#video'), canvas=$('#canvas'), overlay=$('#overlay');
+    var ctx=canvas.getContext('2d',{willReadFrequently:true});
+    var octx=overlay.getContext('2d');
+    var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing'), roiSel=$('#roi');
     var scanEnginePill=$('#scanEngine'), permStateEl=$('#permState'), androidBanner=$('#androidBanner');
 
     var stream=null, scanning=false, detector=null, usingBarcodeDetector=false, scanRAF=0; var data=[]; var STORAGE_KEY='qrLoggerV1';
+    var mirrored=false; var pc=null, dc=null, role='host'; var iceServers=[{urls:'stun:stun.l.google.com:19302'}];
 
     var isAndroid=/Android/i.test(navigator.userAgent); var isInApp=/FBAN|FBAV|Instagram|Line\/|WeChat|Twitter|Snapchat|DuckDuckGo/i.test(navigator.userAgent);
     function setStatus(t){ statusEl.textContent = t || ''; }
@@ -199,31 +211,42 @@
 
     async function requestPermission(){ try{ setStatus('Requesting camera permission…'); var s=await navigator.mediaDevices.getUserMedia({video:decideFacing(),audio:false}); s.getTracks().forEach(function(t){ t.stop(); }); setStatus('Permission granted.'); }catch(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); showAndroidBanner(); } await updatePerm(); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ await enumerateCams(); } }
 
-    async function startFromSelection(){ var errors=[]; async function attempt(v){ try{ stop(); setStatus('Starting camera…'); var s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},...v},audio:false}); stream=s; videoElOn(); return true; }catch(e){ errors.push(e.name+': '+e.message); return false; } } var id=cameraSelect.value; if(id && await attempt({deviceId:{exact:id}})) return true; if(await attempt(decideFacing())) return true; var opp=prefFacing.value==='user'?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; if(await attempt(opp)) return true; if(await attempt(true)) return true; setStatus('Failed to start camera. '+errors.join(' | ')); showAndroidBanner(); return false; }
+    async function startFromSelection(){ var errors=[]; async function attempt(v){ try{ stop(); setStatus('Starting camera…'); var s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080},focusMode:'continuous',advanced:[{focusMode:'continuous'}],...v},audio:false}); stream=s; videoElOn(); return true; }catch(e){ errors.push(e.name+': '+e.message); return false; } } var id=cameraSelect.value; if(id && await attempt({deviceId:{exact:id}})) return true; if(await attempt(decideFacing())) return true; var opp=prefFacing.value==='user'?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; if(await attempt(opp)) return true; if(await attempt(true)) return true; setStatus('Failed to start camera. '+errors.join(' | ')); showAndroidBanner(); return false; }
 
-    function videoElOn(){ video.srcObject=stream; video.play().then(function(){ var t=stream.getVideoTracks()[0]; var s=t.getSettings(); setStatus('Camera started ('+s.width+'×'+s.height+')'); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ enumerateCams(); } initScanner(); }).catch(function(e){ setStatus('Video play failed: '+e.message); }); }
+    function getTrack(){ if(!stream) return null; var tracks=stream.getVideoTracks(); return tracks && tracks[0] ? tracks[0] : null; }
+
+    function videoElOn(){ video.srcObject=stream; video.play().then(function(){ var t=getTrack(); var s=t?t.getSettings():{}; setStatus('Camera started ('+(s.width||'?')+'×'+(s.height||'?')+')'); sizeOverlay(); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ enumerateCams(); } initScanner(); tryApplyDefaults(); }).catch(function(e){ setStatus('Video play failed: '+e.message); }); }
+
+    function sizeOverlay(){ overlay.width=video.clientWidth; overlay.height=video.clientHeight; }
+    window.addEventListener('resize', sizeOverlay);
+
+    async function tryApplyDefaults(){ try{ var t=getTrack(); if(!t) return; var caps=t.getCapabilities ? t.getCapabilities() : {}; var cons={advanced:[]}; if(caps.focusMode && caps.focusMode.indexOf('continuous')>-1) cons.advanced.push({focusMode:'continuous'}); if(caps.exposureMode && caps.exposureMode.indexOf('continuous')>-1) cons.advanced.push({exposureMode:'continuous'}); if(cons.advanced.length) await t.applyConstraints(cons); }catch(e){} }
 
     function stop(){ cancelAnimationFrame(scanRAF); scanning=false; if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; } }
 
-    async function initScanner(){ usingBarcodeDetector = ('BarcodeDetector' in window); if(usingBarcodeDetector){ try{ detector=new BarcodeDetector({formats:['qr_code']}); scanEnginePill.textContent='Engine: BarcodeDetector'; scanning=true; return scanLoopDetector(); }catch(e){ usingBarcodeDetector=false; } } scanEnginePill.textContent='Engine: jsQR'; scanning=true; scanLoopJsQR(); }
+    async function initScanner(){ usingBarcodeDetector = ('BarcodeDetector' in window); if(usingBarcodeDetector){ try{ detector=new BarcodeDetector({formats:['qr_code','aztec','data_matrix','pdf417']}); scanEnginePill.textContent='Engine: BarcodeDetector'; scanning=true; return scanLoopDetector(); }catch(e){ usingBarcodeDetector=false; } } scanEnginePill.textContent='Engine: jsQR'; scanning=true; scanLoopJsQR(); }
 
-    async function scanLoopDetector(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopDetector); return; } try{ var bmp=await createImageBitmap(video); var codes=await detector.detect(bmp); if(codes && codes.length){ onScan(codes[0].rawValue, codes[0].format||'qr_code', 'camera'); await new Promise(function(r){ setTimeout(r,350); }); } }catch(e){} scanRAF=requestAnimationFrame(scanLoopDetector); }
+    function drawOverlayBox(points){ if(!points || points.length<4) return; octx.clearRect(0,0,overlay.width,overlay.height); octx.lineWidth=4; octx.strokeStyle='#22c55e'; octx.beginPath(); octx.moveTo(points[0].x, points[0].y); for(var i=1;i<points.length;i++){ octx.lineTo(points[i].x, points[i].y); } octx.closePath(); octx.stroke(); }
+    function clearOverlay(){ octx.clearRect(0,0,overlay.width,overlay.height); }
 
-    function scanLoopJsQR(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } var w=video.videoWidth, h=video.videoHeight; if(!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ var id=ctx.getImageData(0,0,w,h); var q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q && q.data){ onScan(q.data,'qr_code','camera'); setTimeout(function(){ scanRAF=requestAnimationFrame(scanLoopJsQR); },350); return; } }catch(e){} scanRAF=requestAnimationFrame(scanLoopJsQR); }
+    async function scanLoopDetector(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopDetector); return; } try{ var det=null; try{ det=await detector.detect(video); }catch(e){ try{ var bmp=await createImageBitmap(video); det=await detector.detect(bmp); }catch(e2){} } if(det && det.length){ var c=det[0]; var text=c.rawValue || ''; upsert(text, c.format||'qr_code', 'camera'); if(c.cornerPoints){ drawOverlayBox(c.cornerPoints); } else if(c.corners){ drawOverlayBox(c.corners); } setTimeout(function(){ clearOverlay(); scanRAF=requestAnimationFrame(scanLoopDetector); }, 350); return; } }catch(e){} scanRAF=requestAnimationFrame(scanLoopDetector); }
 
-    var tbody=$('#logBody'); function render(){ tbody.innerHTML=''; data.forEach(function(r,i){ var tr=document.createElement('tr'); tr.innerHTML='<td class="muted">'+(i+1)+'</td><td>'+esc(r.content)+'</td><td><span class="pill">'+(r.format||'QR')+'</span></td><td class="muted">'+(r.source||'camera')+'</td><td class="muted">'+new Date(r.timestamp).toLocaleString()+'</td><td><span class="count">× '+(r.count||1)+'</span></td><td class="note-cell" contenteditable="true">'+esc(r.notes||'')+'</td><td><button class="small" data-act="edit">Edit</button> <button class="small" data-act="delete">Delete</button></td>'; tr.dataset.id=r.id; tbody.appendChild(tr); }); }
-    function esc(s){ s = (s==null)? '' : s; return (''+s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
-    function upsert(content,format,source){ if(!content) return; if(format==null) format='qr_code'; if(source==null) source='camera'; var now=new Date().toISOString(); var ex=data.find(function(x){ return x.content===content; }); if(ex){ ex.count=(ex.count||1)+1; ex.timestamp=now; save(); render(); beep(); return; } data.unshift({id:crypto.randomUUID(), content:content, format:format, source:source, timestamp:now, count:1, notes:''}); save(); render(); beep(); }
+    function scanLoopJsQR(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } var w=video.videoWidth||0, h=video.videoHeight||0; if(!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } var useCenter = (roiSel && roiSel.value==='center'); var size = useCenter ? Math.min(w,h) : w; var sx = useCenter ? Math.floor((w-size)/2) : 0; var sy = useCenter ? Math.floor((h-size)/2) : 0; canvas.width=size; canvas.height=size; if(mirrored){ ctx.save(); ctx.scale(-1,1); ctx.drawImage(video, sx, sy, size, size, -size, 0, size, size); ctx.restore(); } else { ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size); }
+      try{ var id=ctx.getImageData(0,0,size,size); var q=jsQR(id.data,size,size,{ inversionAttempts:'attemptBoth' }); if(q && q.data){ upsert(q.data,'qr_code','camera'); var pts=[q.location.topLeftCorner,q.location.topRightCorner,q.location.bottomRightCorner,q.location.bottomLeftCorner].map(function(p){ return {x:p.x*(overlay.width/size), y:p.y*(overlay.height/size)}; }); drawOverlayBox(pts); setTimeout(function(){ clearOverlay(); scanRAF=requestAnimationFrame(scanLoopJsQR); }, 350); return; } }catch(e){} scanRAF=requestAnimationFrame(scanLoopJsQR); }
 
-    document.addEventListener('click', function(e){ var btn=e.target; while(btn && btn.tagName!=='BUTTON'){ btn = btn.parentNode; } if(!btn) return; var tr=e.target; while(tr && tr.tagName!=='TR'){ tr = tr.parentNode; } var id=(tr && tr.dataset)? tr.dataset.id : null; var act=btn.getAttribute('data-act'); if(act==='delete' && id){ data = data.filter(function(r){ return r.id!==id; }); save(); render(); } if(act==='edit' && id){ var row=data.find(function(r){ return r.id===id; }); var nv=prompt('Edit QR content:', row?row.content:''); if(nv!==null){ row.content=nv; save(); render(); } } });
-    document.addEventListener('blur', function(e){ var c=e.target; if(!c.classList || !c.classList.contains('note-cell')) return; var tr=c; while(tr && tr.tagName!=='TR'){ tr = tr.parentNode; } var id=(tr && tr.dataset)? tr.dataset.id : null; var row=data.find(function(r){ return r.id===id; }); if(row){ row.notes=c.textContent; save(); } }, true);
+    var tbody=$('#logBody'); function render(){ tbody.innerHTML=''; for(var i=0;i<data.length;i++){ var r=data[i]; var tr=document.createElement('tr'); tr.innerHTML='<td class="muted">'+(i+1)+'</td><td>'+esc(r.content)+'</td><td><span class="pill">'+(r.format||'QR')+'</span></td><td class="muted">'+(r.source||'camera')+'</td><td class="muted">'+new Date(r.timestamp).toLocaleString()+'</td><td><span class="count">× '+(r.count||1)+'</span></td><td class="note-cell" contenteditable="true">'+esc(r.notes||'')+'</td><td><button class="small" data-act="edit">Edit</button> <button class="small" data-act="delete">Delete</button></td>'; tr.dataset.id=r.id; tbody.appendChild(tr); } }
+    function esc(s){ s = (s==null)? '' : s; return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function upsert(content,format,source){ if(!format) format='qr_code'; if(!source) source='camera'; if(!content) return; var now=new Date().toISOString(); var ex=null; for(var i=0;i<data.length;i++){ if(data[i].content===content){ ex=data[i]; break; } } if(ex){ ex.count=(ex.count||1)+1; ex.timestamp=now; setStatus('Scanned: '+content); save(); render(); beep(); return; } data.unshift({id:(crypto.randomUUID?crypto.randomUUID():(Date.now()+Math.random().toString(36).slice(2))), content:content, format:format, source:source, timestamp:now, count:1, notes:''}); setStatus('Scanned: '+content); save(); render(); beep(); if(role==='camera' && dc && dc.readyState==='open'){ try{ dc.send(JSON.stringify({type:'qr', content:content, format:format, source:'remote-camera'})); }catch(e){} } }
 
-    var manualInput=$('#manualInput'); document.getElementById('addManualBtn').addEventListener('click', function(){ var v=manualInput && manualInput.value ? manualInput.value.trim() : ''; if(v) { onScan(v,'text','manual/keyboard'); manualInput.value=''; } }); if(manualInput){ manualInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); var v=manualInput.value.trim(); if(v){ onScan(v,'text','manual/keyboard'); manualInput.value=''; } } }); }
+    document.addEventListener('click', function(e){ var btn=e.target; while(btn && btn.tagName!=='BUTTON'){ btn = btn.parentNode; } if(!btn) return; var tr=e.target; while(tr && tr.tagName!=='TR'){ tr = tr.parentNode; } var id=(tr && tr.dataset)? tr.dataset.id : null; var act=btn.getAttribute('data-act'); if(act==='delete' && id){ data = data.filter(function(r){ return r.id!==id; }); save(); render(); } if(act==='edit' && id){ var row=null; for(var i=0;i<data.length;i++){ if(data[i].id===id){ row=data[i]; break; } } var nv=prompt('Edit QR content:', row?row.content:''); if(nv!==null && row){ row.content=nv; save(); render(); } } });
+    document.addEventListener('blur', function(e){ var c=e.target; if(!c.classList || !c.classList.contains('note-cell')) return; var tr=c; while(tr && tr.tagName!=='TR'){ tr = tr.parentNode; } var id=(tr && tr.dataset)? tr.dataset.id : null; var row=null; for(var i=0;i<data.length;i++){ if(data[i].id===id){ row=data[i]; break; } } if(row){ row.notes=c.textContent; save(); } }, true);
 
-    document.getElementById('exportCsv').addEventListener('click', function(){ var rows=[["QR Content","Format","Source","Timestamp","Count","Notes"]].concat(data.map(function(r){ return [r.content,r.format,r.source,r.timestamp,r.count,r.notes||'']; })); var csv=rows.map(function(r){ return r.map(function(f){ var s=((f==null)?'':f).toString().replaceAll('"','""'); return /[",\n]/.test(s)?('"'+s+'"'):s; }).join(','); }).join('\n'); var blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='qr-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.csv'; a.click(); URL.revokeObjectURL(a.href); });
+    var manualInput=$('#manualInput'); document.getElementById('addManualBtn').addEventListener('click', function(){ var v=manualInput && manualInput.value ? manualInput.value.trim() : ''; if(v) { upsert(v,'text','manual/keyboard'); manualInput.value=''; } }); if(manualInput){ manualInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); var v=manualInput.value.trim(); if(v){ upsert(v,'text','manual/keyboard'); manualInput.value=''; } } }); }
+
+    document.getElementById('exportCsv').addEventListener('click', function(){ var rows=[["QR Content","Format","Source","Timestamp","Count","Notes"]].concat(data.map(function(r){ return [r.content,r.format,r.source,r.timestamp,r.count,r.notes||'']; })); var csv=rows.map(function(r){ return r.map(function(f){ var s=((f==null)?'':f).toString().replace(/\\"/g,'\\"').replace(/\"/g,'\"\"'); return /[\",\\n]/.test(s)?('\"'+s+'\"'):s; }).join(','); }).join('\\n'); var blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='qr-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.csv'; a.click(); URL.revokeObjectURL(a.href); });
     document.getElementById('exportXlsx').addEventListener('click', function(){ var ws=XLSX.utils.json_to_sheet(data.map(function(r){ return {"QR Content":r.content,"Format":r.format,"Source":r.source,"Timestamp":r.timestamp,"Count":r.count,"Notes":r.notes||''}; })); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'QR Log'); XLSX.writeFile(wb,'qr-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.xlsx'); });
     document.getElementById('importFileBtn').addEventListener('click', function(){ var fi=document.getElementById('fileInput'); if(fi) fi.click(); });
-    document.getElementById('fileInput').addEventListener('change', async function(e){ var file=e.target.files[0]; if(!file) return; var name=(file.name||'').toLowerCase(); if(name.endsWith('.csv')){ var text=await file.text(); var rows=text.split(/\r?\n/).map(function(r){ return r.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/); }); var b=rows.slice(1); b.forEach(function(cols){ if(!cols.length||!cols[0])return; onScan(cols[0].replaceAll('\\"','"'),'text','import'); var last=data[0]; last.timestamp=cols[3]||new Date().toISOString(); last.count=parseInt(cols[4]||'1',10); last.notes=(cols[5]||'').replace(/^\"|\"$/g,''); }); } else { var buf=await file.arrayBuffer(); var wb=XLSX.read(buf,{type:'array'}); var ws=wb.Sheets[wb.SheetNames[0]]; var rows2=XLSX.utils.sheet_to_json(ws); rows2.forEach(function(o){ onScan(o['QR Content'], o['Format']||'qr_code','import'); var last=data[0]; last.timestamp=o['Timestamp']||new Date().toISOString(); last.count=parseInt(o['Count']||'1',10); last.notes=o['Notes']||''; }); } save(); render(); setStatus('Imported data from file.'); e.target.value=''; });
+    document.getElementById('fileInput').addEventListener('change', async function(e){ var file=e.target.files[0]; if(!file) return; var name=(file.name||'').toLowerCase(); if(name.slice(-4)==='.csv'){ var text=await file.text(); var rows=text.split(/\\r?\\n/).map(function(r){ return r.split(/,(?=(?:[^\\\"]*\\\"[^\\\"]*\\\")*[^\\\"]*$)/); }); var b=rows.slice(1); for(var i=0;i<b.length;i++){ var cols=b[i]; if(!cols.length||!cols[0])continue; upsert(cols[0].replace(/\\\\\\\"/g,'\\\"'),'text','import'); var last=data[0]; last.timestamp=cols[3]||new Date().toISOString(); last.count=parseInt(cols[4]||'1',10); last.notes=(cols[5]||'').replace(/^\\\"|\\\"$/g,''); } } else { var buf=await file.arrayBuffer(); var wb=XLSX.read(buf,{type:'array'}); var ws=wb.Sheets[wb.SheetNames[0]]; var rows2=XLSX.utils.sheet_to_json(ws); for(var j=0;j<rows2.length;j++){ var o=rows2[j]; upsert(o['QR Content'], o['Format']||'qr_code','import'); var last2=data[0]; last2.timestamp=o['Timestamp']||new Date().toISOString(); last2.count=parseInt(o['Count']||'1',10); last2.notes=o['Notes']||''; } } save(); render(); setStatus('Imported data from file.'); e.target.value=''; });
 
     var remoteToggle=$('#remoteToggle'), remotePanel=$('#remotePanel'), roleSel=$('#role'), startRole=$('#startRole'), remoteStatus=$('#remoteStatus');
     var hostUI=$('#hostUI'), cameraUI=$('#cameraUI');
@@ -231,8 +254,6 @@
     var applyAnswerBtn=$('#applyAnswer'), answerText=$('#answerText');
     var scanOfferBtn=$('#scanOffer'), applyOfferBtn=$('#applyOffer'), offerInput=$('#offerInput');
     var copyAnswerCamBtn=$('#copyAnswerCam'), answerOut=$('#answerOut'), answerQR=$('#answerQR');
-
-    var pc=null, dc=null, role='host'; var iceServers=[{urls:'stun:stun.l.google.com:19302'}];
 
     function setRemoteStatus(t){ remoteStatus.textContent=t||''; }
     function encodeObj(obj){ try{ return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }catch(e){ return ''; } }
@@ -265,8 +286,6 @@
     scanOfferBtn && scanOfferBtn.addEventListener('click', async function(){ try{ await requestPermission(); await startFromSelection(); setStatus('Point camera at the host Offer QR…'); var scanOnce=function(){ var w=video.videoWidth, h=video.videoHeight; if(!w||!h){ requestAnimationFrame(scanOnce); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ var id=ctx.getImageData(0,0,w,h); var q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q && q.data){ offerInput.value=q.data; stop(); setStatus('Offer QR captured. Tap Apply Offer.'); } }catch(e){} requestAnimationFrame(scanOnce); }; requestAnimationFrame(scanOnce); }catch(e){ alert('Unable to access camera to scan offer.'); } });
     copyAnswerCamBtn && copyAnswerCamBtn.addEventListener('click', function(){ if(navigator.clipboard) navigator.clipboard.writeText(answerOut.value); });
 
-    function onScan(content, format, source){ if(!format) format='qr_code'; if(!source) source='camera'; if(role==='camera' && dc && dc.readyState==='open'){ try{ dc.send(JSON.stringify({type:'qr', content:content, format:format, source:'remote-camera'})); }catch(e){} upsert(content, format, 'remote-local'); } else { upsert(content, format, source); } }
-
     var fb=null, db=null, codeDoc=null, codeUnsubs=[]; var codeInput=$('#pairCode'); var codeStatus=$('#codeStatus'); var codeGenerateBtn=$('#codeGenerate'); var codeJoinBtn=$('#codeJoin');
     function fbLog(t){ if(codeStatus) codeStatus.textContent=t||''; }
     function randCode(){ return ''+Math.floor(100000 + Math.random()*900000); }
@@ -275,16 +294,24 @@
 
     async function codeHostStart(){ if(!initFirebase()){ fbLog('Pairing not configured. Add pairing‑config.js'); return; } await cleanupCodeDoc(); var code=randCode(); if(codeInput) codeInput.value=code; codeDoc = db.collection('qrRooms').doc(code); await codeDoc.set({ created: firebase.firestore.FieldValue.serverTimestamp() }); var offer = await pc.createOffer({ offerToReceiveAudio:false, offerToReceiveVideo:false }); await pc.setLocalDescription(offer); await new Promise(function(res){ (function chk(){ if(pc.iceGatheringState==='complete') res(); else setTimeout(chk,50); })(); }); await codeDoc.set({ offer: pc.localDescription.toJSON(), created: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }); fbLog('Share the 6‑digit code and wait for answer…'); codeUnsubs.push(codeDoc.onSnapshot(async function(snap){ var data=snap.data(); if(!data || !data.answer) return; try{ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); fbLog('Connected by code.'); setTimeout(function(){ cleanupCodeDoc(); }, 30000); }catch(e){ fbLog('Bad answer. Try again.'); } })); }
 
-    async function codeCameraJoin(){ if(!initFirebase()){ fbLog('Pairing not configured. Add pairing‑config.js'); return; } var code=(codeInput && codeInput.value || '').trim(); if(!/^\d{6}$/.test(code)){ fbLog('Enter a 6‑digit code.'); return; } codeDoc = db.collection('qrRooms').doc(code); var snap = await codeDoc.get(); var data=snap.data(); if(!data || !data.offer){ fbLog('No offer for this code yet.'); return; } try{ await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); var answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await new Promise(function(res){ (function chk(){ if(pc.iceGatheringState==='complete') res(); else setTimeout(chk,50); })(); }); await codeDoc.set({ answer: pc.localDescription.toJSON() }, { merge:true }); fbLog('Answer posted. Connecting…'); setTimeout(function(){ cleanupCodeDoc(); }, 30000); }catch(e){ fbLog('Failed to join with this code.'); }
+    async function codeCameraJoin(){ if(!initFirebase()){ fbLog('Pairing not configured. Add pairing‑config.js'); return; } var code=(codeInput && codeInput.value || '').trim(); if(!/^\\d{6}$/.test(code)){ fbLog('Enter a 6‑digit code.'); return; } codeDoc = db.collection('qrRooms').doc(code); var snap = await codeDoc.get(); var data=snap.data(); if(!data || !data.offer){ fbLog('No offer for this code yet.'); return; } try{ await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); var answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await new Promise(function(res){ (function chk(){ if(pc.iceGatheringState==='complete') res(); else setTimeout(chk,50); })(); }); await codeDoc.set({ answer: pc.localDescription.toJSON() }, { merge:true }); fbLog('Answer posted. Connecting…'); setTimeout(function(){ cleanupCodeDoc(); }, 30000); }catch(e){ fbLog('Failed to join with this code.'); }
     }
 
     codeGenerateBtn && codeGenerateBtn.addEventListener('click', function(){ if(!pc) setupPeer(); if(role!=='host'){ fbLog('Switch role to Host.'); return; } codeHostStart(); });
     codeJoinBtn && codeJoinBtn.addEventListener('click', function(){ if(!pc) setupPeer(); if(role!=='camera'){ fbLog('Switch role to Camera.'); return; } codeCameraJoin(); });
 
+    var torchOn=false; async function toggleTorch(){ try{ var t=getTrack(); if(!t || !t.applyConstraints) return; var caps=t.getCapabilities? t.getCapabilities() : {}; if(!caps.torch){ setStatus('Torch not supported on this device.'); return; } torchOn=!torchOn; await t.applyConstraints({advanced:[{torch:torchOn}]}); setStatus('Torch '+(torchOn?'on':'off')); }catch(e){ setStatus('Torch failed: '+e.message); } }
+    async function changeZoom(delta){ try{ var t=getTrack(); if(!t) return; var caps=t.getCapabilities? t.getCapabilities() : {}; if(!caps.zoom){ setStatus('Zoom not supported.'); return; } var s=t.getSettings? t.getSettings() : {}; var cur=typeof s.zoom==='number'? s.zoom : (caps.zoom.min||1); var next=Math.max(caps.zoom.min, Math.min(caps.zoom.max, cur + delta*(caps.zoom.step||0.1))); await t.applyConstraints({advanced:[{zoom:next}]}); setStatus('Zoom: '+(next.toFixed? next.toFixed(2) : next)); }catch(e){ setStatus('Zoom failed: '+e.message); } }
+
     document.getElementById('permBtn').addEventListener('click', requestPermission);
     document.getElementById('startBtn').addEventListener('click', startFromSelection);
-    document.getElementById('stopBtn').addEventListener('click', function(){ stop(); setStatus('Camera stopped.'); });
+    document.getElementById('stopBtn').addEventListener('click', function(){ stop(); setStatus('Camera stopped.'); clearOverlay(); });
     document.getElementById('refreshBtn').addEventListener('click', enumerateCams);
+    document.getElementById('torchBtn').addEventListener('click', toggleTorch);
+    document.getElementById('zoomIn').addEventListener('click', function(){ changeZoom(0.25); });
+    document.getElementById('zoomOut').addEventListener('click', function(){ changeZoom(-0.25); });
+    document.getElementById('flipBtn').addEventListener('click', function(){ mirrored=!mirrored; video.style.transform = mirrored ? 'scaleX(-1)' : 'scaleX(1)'; });
+    document.getElementById('remoteToggle').addEventListener('click', function(){ var rp=document.getElementById('remotePanel'); rp.style.display = (rp.style.display==='none'?'block':'none'); });
     cameraSelect.addEventListener('change', startFromSelection);
 
     load(); render(); updatePerm(); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ enumerateCams(); } showAndroidBanner();
