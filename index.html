@@ -3,225 +3,295 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR Logger — v5 (PWA + Remote)</title>
+  <title>QR Logger — v5.1 (PWA + Remote + Pair Code) — Patched + A11y</title>
   <meta name="theme-color" content="#0f172a"/>
+  <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
   <link rel="icon" href="icons/icon-192.png"/>
   <style>
     :root{--bg:#0b1220;--panel:#0f172a;--muted:#94a3b8;--text:#e2e8f0;--accent:#22c55e;--border:#1f2937;--radius:16px}
     *{box-sizing:border-box}html,body{height:100%}
     body{margin:0;background:radial-gradient(1200px 800px at 10% -10%, #0c152a, var(--bg) 40%);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-    header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+    header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
     h1{font-size:22px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-top:2px}
     .grid{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:980px){.grid{grid-template-columns:420px 1fr}}
     .card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:var(--radius)}
     .card .content{padding:16px}
     .video-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
-    video{width:100%;display:block}.frame{position:absolute;inset:0;border:2px dashed rgba(255,255,255,.25);border-radius:12px;pointer-events:none}
+    video{width:100%;display:block}
+    .frame{position:absolute;inset:0;border:2px dashed rgba(255,255,255,.25);border-radius:12px;pointer-events:none}
     .controls{display:flex;gap:8px;flex-wrap:wrap}.controls>*{flex:1 1 auto}
     button,select,input,textarea{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
     button{cursor:pointer}
     button.primary{background:linear-gradient(180deg,#1f7a3b,#14532d);border-color:#134e4a}
     button.secondary{background:linear-gradient(180deg,#0b2a64,#0b1f3a);border-color:#0b1f3a}
-    .status{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}.muted{color:var(--muted);font-size:12px}
+    .status{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}
+    .muted{color:var(--muted);font-size:12px}
     .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#0b2a64;border:1px solid #0b1f3a;color:#cfe1ff}
     .banner{margin:12px 0;padding:10px 12px;border-radius:12px;border:1px solid #43320b;background:linear-gradient(180deg,rgba(255,170,0,.12),rgba(255,170,0,.06));color:#ffdd9a}
     table{width:100%;border-collapse:collapse}thead th{position:sticky;top:0;background:#0e172a;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:.06em;color:#93a3b8;padding:10px 8px;text-align:left}
     tbody td{border-bottom:1px solid var(--border);padding:8px;vertical-align:top;font-size:14px}
     .note-cell[contenteditable="true"]{outline:1px dashed rgba(255,255,255,.15)}.count{display:inline-flex;gap:6px;background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:2px 8px;font-size:12px}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,1px,1px);white-space:nowrap;border:0}
   </style>
 </head>
 <body>
   <header>
-    <div class="wrap">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-        <div>
-          <h1>QR Logger</h1>
-          <div class="subtitle">PWA + Two-device Remote Mode</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button id="installBtn" class="secondary" style="display:none">Install App</button>
-          <button id="remoteToggle" class="secondary">Remote Mode</button>
-        </div>
+    <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <h1>QR Logger</h1>
+        <div class="subtitle">PWA + Two‑Device Remote + Pair by Code (Patched + A11y)</div>
+      </div>
+      <div style="display:flex;gap:8px;min-width:260px">
+        <button id="installBtn" class="secondary" style="display:none">Install App</button>
+        <button id="remoteToggle" class="secondary">Remote Mode</button>
+      </div>
     </div>
-  </div>
   </header>
 
   <main class="wrap">
     <div id="androidBanner" class="banner" style="display:none"></div>
 
-    <div class="grid">
-      <section class="card">
-        <div class="content">
-          <h2 style="margin:0 0 10px 0">Scanner</h2>
-          <div class="video-wrap">
-            <video id="video" playsinline muted></video>
-            <div class="frame"></div>
-            <canvas id="canvas" style="display:none"></canvas>
-          </div>
-
-          <div class="controls" style="margin-top:12px">
-            <button id="permBtn" class="secondary">Request Permission</button>
-            <button id="startBtn" class="primary">Start Camera</button>
-            <button id="stopBtn" class="secondary">Stop</button>
-          </div>
-
-          <div class="controls" style="margin-top:8px">
-            <select id="cameraSelect" title="Choose Camera"></select>
-            <button id="refreshBtn" class="secondary">Refresh Cameras</button>
-            <select id="prefFacing">
-              <option value="environment">Prefer Back</option>
-              <option value="user">Prefer Front</option>
-              <option value="auto" selected>Auto</option>
-            </select>
-            <span id="scanEngine" class="pill">Engine: Detecting…</span>
-          </div>
-
-          <div class="controls" style="margin-top:8px">
-            <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
-            <button id="addManualBtn">Add</button>
-          </div>
-
-          <div id="status" class="status"></div>
-          <div id="permState" class="muted" style="margin-top:6px"></div>
+    <div class="grid" role="region" aria-label="QR scanner and log">
+      <section class="card"><div class="content">
+        <h2 style="margin:0 0 10px 0">Scanner</h2>
+        <div class="video-wrap">
+          <video id="video" playsinline webkit-playsinline muted></video>
+          <div class="frame" aria-hidden="true"></div>
+          <canvas id="canvas" style="display:none"></canvas>
         </div>
-      </section>
-
-      <section class="card">
-        <div class="content">
-          <h2 style="margin:0 0 10px 0">Log</h2>
-          <div class="controls" style="margin-bottom:8px">
-            <button id="exportXlsx" class="primary">Export Excel (.xlsx)</button>
-            <button id="exportCsv" class="secondary">Export CSV</button>
-            <button id="importFileBtn" class="secondary">Import</button>
-            <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" style="display:none"/>
-            <button id="clearBtn" class="secondary">Clear</button>
-          </div>
-
-          <div class="card" style="max-height:55vh;overflow:auto">
-            <table id="logTable">
-              <thead>
-                <tr>
-                  <th>#</th><th>QR Content</th><th>Format</th><th>Source</th><th>Timestamp</th><th>Count</th><th>Notes (editable)</th><th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="logBody"></tbody>
-            </table>
-          </div>
+        <div class="controls" style="margin-top:12px">
+          <button id="permBtn" class="secondary">Request Permission</button>
+          <button id="startBtn" class="primary">Start Camera</button>
+          <button id="stopBtn" class="secondary">Stop</button>
         </div>
-      </section>
+        <div class="controls" style="margin-top:8px">
+          <label class="sr-only" for="cameraSelect">Camera</label>
+          <select id="cameraSelect" title="Camera" aria-label="Camera device list"></select>
+          <button id="refreshBtn" class="secondary" title="Refresh camera list">Refresh Cameras</button>
+          <label class="sr-only" for="prefFacing">Preferred camera</label>
+          <select id="prefFacing" title="Preferred camera" aria-label="Preferred camera">
+            <option value="environment">Prefer Back</option>
+            <option value="user">Prefer Front</option>
+            <option value="auto" selected>Auto</option>
+          </select>
+          <span id="scanEngine" class="pill" aria-live="polite">Engine: Detecting…</span>
+        </div>
+        <div class="controls" style="margin-top:8px">
+          <label class="sr-only" for="manualInput">Manual QR entry</label>
+          <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
+          <button id="addManualBtn">Add</button>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="permState" class="muted" style="margin-top:6px"></div>
+      </div></section>
+
+      <section class="card"><div class="content">
+        <h2 style="margin:0 0 10px 0">Log</h2>
+        <div class="controls" style="margin-bottom:8px">
+          <button id="exportXlsx" class="primary">Export Excel (.xlsx)</button>
+          <button id="exportCsv" class="secondary">Export CSV</button>
+          <button id="importFileBtn" class="secondary" aria-controls="fileInput">Import</button>
+          <label for="fileInput" class="sr-only">Choose file to import</label>
+          <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" title="Choose file" aria-label="Choose file" style="display:none"/>
+          <button id="clearBtn" class="secondary" title="Clear all rows">Clear</button>
+        </div>
+        <div class="card" style="max-height:55vh;overflow:auto">
+          <table id="logTable">
+            <thead><tr>
+              <th>#</th><th>QR Content</th><th>Format</th><th>Source</th><th>Timestamp</th><th>Count</th><th>Notes (editable)</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="logBody"></tbody>
+          </table>
+        </div>
+      </div></section>
     </div>
 
-    <section id="remotePanel" class="card" style="margin-top:16px;display:none">
-      <div class="content">
-        <h2 style="margin:0 0 10px 0">Remote Mode (two-device)</h2>
-        <div class="controls" style="margin-bottom:8px">
-          <select id="role"><option value="host" selected>Host (PC)</option><option value="camera">Camera (phone)</option></select>
-          <button id="startRole" class="primary">Start</button>
-          <span id="remoteStatus" class="muted"></span>
-        </div>
-        <div id="hostUI" style="display:none">
-          <h3>Step 1 — Create Offer (Host)</h3>
-          <div style="display:flex;gap:8px"><button id="createOffer" class="secondary">Create Offer</button><button id="copyOffer" class="secondary">Copy</button></div>
-          <textarea id="offerText" rows="5" placeholder="Offer will appear here"></textarea>
-          <canvas id="offerQR" width="256" height="256" style="background:#fff;border-radius:10px;margin-top:8px"></canvas>
-          <p class="muted">If the QR looks truncated, use copy/paste.</p>
-          <h3 style="margin-top:12px">Step 2 — Paste Answer</h3>
-          <div><button id="applyAnswer" class="secondary">Apply Answer</button></div>
-          <textarea id="answerText" rows="5" placeholder="Paste the answer from the phone"></textarea>
-        </div>
-        <div id="cameraUI" style="display:none">
-          <h3>Step 1 — Enter/Scan Offer</h3>
-          <div style="display:flex;gap:8px"><button id="scanOffer" class="secondary">Scan Offer QR</button><button id="applyOffer" class="secondary">Apply Offer</button></div>
-          <textarea id="offerInput" rows="5" placeholder="Paste or scan the host offer"></textarea>
-          <h3 style="margin-top:12px">Step 2 — Send Answer</h3>
-          <div><button id="copyAnswerCam" class="secondary">Copy</button></div>
-          <textarea id="answerOut" rows="5" placeholder="Answer will appear here"></textarea>
-          <canvas id="answerQR" width="256" height="256" style="background:#fff;border-radius:10px;margin-top:8px"></canvas>
-        </div>
+    <section id="remotePanel" class="card" style="margin-top:16px;display:none"><div class="content">
+      <h2 style="margin:0 0 10px 0">Remote Mode</h2>
+      <p class="muted">Phone scans → PC logs. Connect with Offer/Answer, QR, or 6‑digit code (if Firebase configured).</p>
+      <div class="controls" style="margin-bottom:8px">
+        <label class="sr-only" for="role">Role</label>
+        <select id="role" title="Role" aria-label="Select role">
+          <option value="host" selected>Host (PC)</option>
+          <option value="camera">Camera (phone)</option>
+        </select>
+        <button id="startRole" class="primary">Start</button>
+        <span id="remoteStatus" class="muted" aria-live="polite"></span>
       </div>
-    </section>
+
+      <div id="hostUI" style="display:none">
+        <h3>Host — Create Offer</h3>
+        <div style="display:flex;gap:8px"><button id="createOffer" class="secondary">Create Offer</button><button id="copyOffer" class="secondary">Copy</button></div>
+        <label class="sr-only" for="offerText">Offer</label>
+        <textarea id="offerText" rows="5" placeholder="Offer will appear here"></textarea>
+        <canvas id="offerQR" width="256" height="256" style="background:#fff;border-radius:10px;margin-top:8px" aria-label="Offer QR"></canvas>
+        <h3 style="margin-top:12px">Paste Answer</h3>
+        <div><button id="applyAnswer" class="secondary">Apply Answer</button></div>
+        <label class="sr-only" for="answerText">Answer</label>
+        <textarea id="answerText" rows="5" placeholder="Paste the answer from the phone"></textarea>
+      </div>
+
+      <div id="cameraUI" style="display:none">
+        <h3>Camera — Enter/Scan Offer</h3>
+        <div style="display:flex;gap:8px"><button id="scanOffer" class="secondary">Scan Offer QR</button><button id="applyOffer" class="secondary">Apply Offer</button></div>
+        <label class="sr-only" for="offerInput">Offer from host</label>
+        <textarea id="offerInput" rows="5" placeholder="Paste or scan the host offer"></textarea>
+        <h3 style="margin-top:12px">Send Answer</h3>
+        <div><button id="copyAnswerCam" class="secondary">Copy</button></div>
+        <label class="sr-only" for="answerOut">Answer from phone</label>
+        <textarea id="answerOut" rows="5" placeholder="Answer will appear here"></textarea>
+        <canvas id="answerQR" width="256" height="256" style="background:#fff;border-radius:10px;margin-top:8px" aria-label="Answer QR"></canvas>
+      </div>
+
+      <div class="card" style="margin-top:12px"><div class="content">
+        <h3 style="margin:0 0 8px 0">Pair by Code (Firestore)</h3>
+        <div class="controls" style="margin-bottom:8px">
+          <label class="sr-only" for="pairCode">6‑digit code</label>
+          <input id="pairCode" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="6‑digit code"/>
+          <button id="codeGenerate" class="secondary">Generate (Host)</button>
+          <button id="codeJoin" class="secondary">Join (Camera)</button>
+        </div>
+        <div class="muted" id="codeStatus" aria-live="polite"></div>
+      </div></div>
+    </div></section>
   </main>
 
+  <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- Optional Firebase (only used if FIREBASE_CONFIG exists) -->
+  <script src="pairing-config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
   <script>
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(console.error);
+  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch(e){} }
   let deferredPrompt; const installBtn=document.getElementById('installBtn');
-  window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt=e; installBtn.style.display='inline-block'; });
-  installBtn?.addEventListener('click', async()=>{ if(!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; installBtn.style.display='none'; });
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt=e; if(installBtn) installBtn.style.display='inline-block'; });
+  if(installBtn){ installBtn.addEventListener('click', function(){ if(!deferredPrompt) return; deferredPrompt.prompt(); deferredPrompt=null; installBtn.style.display='none'; }); }
 
-  (()=>{
-    const $=s=>document.querySelector(s);
-    const video=$('#video'), canvas=$('#canvas'), ctx=canvas.getContext('2d',{willReadFrequently:true});
-    const statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing');
-    const scanEnginePill=$('#scanEngine'), permStateEl=$('#permState'), androidBanner=$('#androidBanner');
-    const isAndroid=/Android/i.test(navigator.userAgent); const isInApp=/FBAN|FBAV|Instagram|Line\\/|WeChat|Twitter|Snapchat|DuckDuckGo/i.test(navigator.userAgent);
-    let stream=null, scanning=false, detector=null, usingBarcodeDetector=false, scanRAF=0; let data=[]; const STORAGE_KEY='qrLoggerV1';
-    function setStatus(t){ statusEl.textContent=t||''; }
-    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
-    function load(){ try{ data=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch{ data=[]; } }
-    function showAndroidBanner(){ if(!isAndroid) return; const host=location.hostname; let msg='<b>Android tip:</b> '; msg+=isInApp?'In-app browsers often block camera. Use <b>Open in Chrome</b>.':'If no prompt: tap ⓘ/🔒 → <b>Permissions</b> → <b>Camera → Allow</b>.'; msg+='<br/>System: Settings → Apps → <b>Chrome</b> → Permissions → Camera → Allow.'; msg+='<br/>Site reset: Chrome ⋮ → Settings → Site settings → All sites → <b>'+host+'</b> → Clear & reset.'; androidBanner.innerHTML=msg; androidBanner.style.display='block'; }
-    async function updatePerm(){ permStateEl.textContent=''; if(!('permissions' in navigator)) return; try{ const st=await navigator.permissions.query({name:'camera'}); permStateEl.textContent='Permission: '+st.state; st.onchange=()=> permStateEl.textContent='Permission: '+st.state; }catch{} }
-    function decideFacing(){ const p=prefFacing.value; if(p==='environment') return {facingMode:{ideal:'environment'}}; if(p==='user') return {facingMode:{ideal:'user'}}; return isAndroid?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; }
-    async function enumerateCams(){ try{ const devs=await navigator.mediaDevices.enumerateDevices(); const cams=devs.filter(d=>d.kind==='videoinput'); cameraSelect.innerHTML=''; if(!cams.length){ const o=document.createElement('option'); o.value=''; o.textContent='No cameras detected'; cameraSelect.appendChild(o); return cams; } cams.forEach((c,i)=>{ const o=document.createElement('option'); o.value=c.deviceId||''; o.textContent=c.label||('Camera '+(i+1)); cameraSelect.appendChild(o); }); return cams; }catch(e){ setStatus('enumerateDevices failed: '+e.message); return []; }
-    async function requestPermission(){ try{ setStatus('Requesting camera permission…'); const s=await navigator.mediaDevices.getUserMedia({video:decideFacing(),audio:false}); s.getTracks().forEach(t=>t.stop()); setStatus('Permission granted.'); }catch(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); showAndroidBanner(); } await updatePerm(); await enumerateCams(); }
-    async function startFromSelection(){ let errors=[]; async function attempt(v){ try{ stop(); setStatus('Starting camera…'); const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},...v},audio:false}); stream=s; videoElOn(); return true; }catch(e){ errors.push(e.name+': '+e.message); return false; } } const id=cameraSelect.value; if(id && await attempt({deviceId:{exact:id}})) return true; if(await attempt(decideFacing())) return true; const opp=prefFacing.value==='user'?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; if(await attempt(opp)) return true; if(await attempt(true)) return true; setStatus('Failed to start camera. '+errors.join(' | ')); showAndroidBanner(); return false; }
-    function videoElOn(){ video.srcObject=stream; video.play().then(()=>{ const t=stream.getVideoTracks()[0]; const s=t.getSettings(); setStatus(`Camera started (${s.width}×${s.height})`); enumerateCams(); initScanner(); }).catch(e=> setStatus('Video play failed: '+e.message)); }
-    function stop(){ cancelAnimationFrame(scanRAF); scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
-    async function initScanner(){ usingBarcodeDetector='BarcodeDetector' in window; if(usingBarcodeDetector){ try{ detector=new BarcodeDetector({formats:['qr_code']}); scanEnginePill.textContent='Engine: BarcodeDetector'; scanning=true; return scanLoopDetector(); }catch{ usingBarcodeDetector=false; } } scanEnginePill.textContent='Engine: jsQR'; scanning=true; scanLoopJsQR(); }
-    async function scanLoopDetector(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopDetector); return; } try{ const bmp=await createImageBitmap(video); const codes=await detector.detect(bmp); if(codes && codes.length){ onScan(codes[0].rawValue,'qr_code','camera'); await new Promise(r=>setTimeout(r,350)); } }catch{} scanRAF=requestAnimationFrame(scanLoopDetector); }
-    function scanLoopJsQR(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } const w=video.videoWidth,h=video.videoHeight; if(!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ const id=ctx.getImageData(0,0,w,h); const q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q && q.data){ onScan(q.data,'qr_code','camera'); setTimeout(()=>{ scanRAF=requestAnimationFrame(scanLoopJsQR); },350); return; } }catch{} scanRAF=requestAnimationFrame(scanLoopJsQR); }
-    const tbody=$('#logBody'); function render(){ tbody.innerHTML=''; data.forEach((r,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td class="muted">${i+1}</td><td>${esc(r.content)}</td><td><span class="pill">${r.format||'QR'}</span></td><td class="muted">${r.source||'camera'}</td><td class="muted">${new Date(r.timestamp).toLocaleString()}</td><td><span class="count">× ${r.count||1}</span></td><td class="note-cell" contenteditable="true">${esc(r.notes||'')}</td><td><button class="small" data-act="edit">Edit</button> <button class="small" data-act="delete">Delete</button></td>`; tr.dataset.id=r.id; tbody.appendChild(tr); }); }
-    function esc(s){ return (s??'').toString().replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
-    function upsert(content,format='qr_code',source='camera'){ if(!content) return; const now=new Date().toISOString(); const ex=data.find(x=>x.content===content); if(ex){ ex.count=(ex.count||1)+1; ex.timestamp=now; save(); render(); beep(); return; } data.unshift({id:crypto.randomUUID(),content,format,source,timestamp:now,count:1,notes:''}); save(); render(); beep(); }
-    document.addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b) return; const tr=e.target.closest('tr'); const id=tr?.dataset?.id; const act=b.dataset.act; if(act==='delete'&&id){ data=data.filter(r=>r.id!==id); save(); render(); } if(act==='edit'&&id){ const row=data.find(r=>r.id===id); const nv=prompt('Edit QR content:',row.content); if(nv!==null){ row.content=nv; save(); render(); } } });
-    document.addEventListener('blur',(e)=>{ const c=e.target; if(!c.classList.contains('note-cell')) return; const tr=c.closest('tr'); const row=data.find(r=>r.id===tr.dataset.id); if(row){ row.notes=c.textContent; save(); } }, true);
-    const manualInput=$('#manualInput'); $('#addManualBtn').addEventListener('click',()=>{ const v=manualInput.value.trim(); if(v) onScan(v,'text','manual/keyboard'); manualInput.value=''; }); manualInput.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=manualInput.value.trim(); if(v) onScan(v,'text','manual/keyboard'); manualInput.value=''; } });
-    $('#exportCsv').addEventListener('click',()=>{ const rows=[["QR Content","Format","Source","Timestamp","Count","Notes"],...data.map(r=>[r.content,r.format,r.source,r.timestamp,r.count,r.notes||''])]; const csv=rows.map(r=>r.map(f=>{ const s=(f??'').toString().replaceAll('"','""'); return /[",\n]/.test(s)?`"${s}"`:s; }).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`qr-log-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`; a.click(); URL.revokeObjectURL(a.href); });
-    $('#exportXlsx').addEventListener('click',()=>{ const ws=XLSX.utils.json_to_sheet(data.map(r=>({"QR Content":r.content,"Format":r.format,"Source":r.source,"Timestamp":r.timestamp,"Count":r.count,"Notes":r.notes||''}))); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'QR Log'); XLSX.writeFile(wb,`qr-log-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.xlsx`); });
-    $('#importFileBtn').addEventListener('click',()=>$('#fileInput').click()); $('#fileInput').addEventListener('change',async(e)=>{ const f=e.target.files[0]; if(!f) return; const n=f.name.toLowerCase(); if(n.endswith('.csv')){ const t=await f.text(); const rows=t.split(/\r?\n/).map(r=>r.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/)); const [h,...b]=rows; b.forEach(cols=>{ if(!cols.length||!cols[0])return; onScan(cols[0].replaceAll('\\"','"'),'text','import'); const last=data[0]; last.timestamp=cols[3]||new Date().toISOString(); last.count=parseInt(cols[4]||'1',10); last.notes=(cols[5]||'').replace(/^"|"$/g,''); }); } else { const buf=await f.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; const rows=XLSX.utils.sheet_to_json(ws); rows.forEach(o=>{ onScan(o['QR Content'],o['Format']||'qr_code','import'); const last=data[0]; last.timestamp=o['Timestamp']||new Date().toISOString(); last.count=parseInt(o['Count']||'1',10); last.notes=o['Notes']||''; }); } save(); render(); setStatus('Imported data from file.'); e.target.value=''; });
+  if(!String.prototype.replaceAll){ String.prototype.replaceAll=function(find, replace){ return this.split(find).join(replace); }; }
+  if(!window.crypto || !window.crypto.randomUUID){ window.crypto = window.crypto || {}; crypto.randomUUID = function(){ return 'id-'+Math.random().toString(36).slice(2)+Date.now(); }; }
 
-    // Remote mode
-    const remoteToggle=$('#remoteToggle'); const remotePanel=$('#remotePanel'); const roleSel=$('#role'); const startRole=$('#startRole'); const remoteStatus=$('#remoteStatus');
-    const hostUI=$('#hostUI'), cameraUI=$('#cameraUI');
-    const createOfferBtn=$('#createOffer'), copyOfferBtn=$('#copyOffer'), offerText=$('#offerText'), offerQR=$('#offerQR');
-    const applyAnswerBtn=$('#applyAnswer'), answerText=$('#answerText');
-    const scanOfferBtn=$('#scanOffer'), applyOfferBtn=$('#applyOffer'), offerInput=$('#offerInput');
-    const copyAnswerCamBtn=$('#copyAnswerCam'), answerOut=$('#answerOut'), answerQR=$('#answerQR');
-    let pc=null, dc=null, role='host', remoteActive=false; const iceServers=[{urls:'stun:stun.l.google.com:19302'}];
-    remoteToggle.addEventListener('click',()=>{ remotePanel.style.display = remotePanel.style.display==='none'?'block':'none'; });
-    roleSel.addEventListener('change',()=>{ role=roleSel.value; renderRole(); }); function renderRole(){ hostUI.style.display = role==='host'?'block':'none'; cameraUI.style.display = role==='camera'?'block':'none'; } renderRole();
-    startRole.addEventListener('click', ()=>{ setupPeer(); setRemoteStatus('Ready. Follow the steps below.'); });
+  (function(){
+    var $ = function(s){ return document.querySelector(s); };
+    var video=$('#video'), canvas=$('#canvas'); var ctx=canvas.getContext('2d',{willReadFrequently:true});
+    var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing');
+    var scanEnginePill=$('#scanEngine'), permStateEl=$('#permState'), androidBanner=$('#androidBanner');
+
+    var stream=null, scanning=false, detector=null, usingBarcodeDetector=false, scanRAF=0; var data=[]; var STORAGE_KEY='qrLoggerV1';
+
+    var isAndroid=/Android/i.test(navigator.userAgent); var isInApp=/FBAN|FBAV|Instagram|Line\\/|WeChat|Twitter|Snapchat|DuckDuckGo/i.test(navigator.userAgent);
+    function setStatus(t){ statusEl.textContent = t || ''; }
+    function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){} }
+    function load(){ try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch(e){ data=[]; } }
+
+    function showAndroidBanner(){ if(!isAndroid) return; var host=location.hostname; var msg='<b>Android tip:</b> '; msg+=isInApp?'You appear to be in an in‑app browser. Use menu → <b>Open in Chrome</b>.':'If no prompt: tap ⓘ/🔒 → <b>Permissions</b> → <b>Camera → Allow</b>, then reload.'; msg+='<br/>System: Settings → Apps → <b>Chrome</b> → Permissions → Camera → Allow.'; msg+='<br/>Site reset: Chrome ⋮ → Settings → Site settings → All sites → <b>'+host+'</b> → Clear & reset.'; androidBanner.innerHTML=msg; androidBanner.style.display='block'; }
+
+    async function updatePerm(){ permStateEl.textContent=''; if(!('permissions' in navigator)) return; try{ var st=await navigator.permissions.query({name:'camera'}); permStateEl.textContent='Permission: '+st.state; st.onchange=function(){ permStateEl.textContent='Permission: '+st.state; }; }catch(e){} }
+
+    function decideFacing(){ var p=prefFacing.value; if(p==='environment') return {facingMode:{ideal:'environment'}}; if(p==='user') return {facingMode:{ideal:'user'}}; return isAndroid?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; }
+
+    async function enumerateCams(){ try{ var devs=await navigator.mediaDevices.enumerateDevices(); var cams=devs.filter(function(d){ return d.kind==='videoinput'; }); cameraSelect.innerHTML=''; if(!cams.length){ var o=document.createElement('option'); o.value=''; o.textContent='No cameras detected'; cameraSelect.appendChild(o); return cams; } cams.forEach(function(c,i){ var o=document.createElement('option'); o.value=c.deviceId||''; o.textContent=c.label||('Camera '+(i+1)); cameraSelect.appendChild(o); }); return cams; }catch(e){ setStatus('enumerateDevices failed: '+e.message); return []; } }
+
+    async function requestPermission(){ try{ setStatus('Requesting camera permission…'); var s=await navigator.mediaDevices.getUserMedia({video:decideFacing(),audio:false}); s.getTracks().forEach(function(t){ t.stop(); }); setStatus('Permission granted.'); }catch(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); showAndroidBanner(); } await updatePerm(); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ await enumerateCams(); } }
+
+    async function startFromSelection(){ var errors=[]; async function attempt(v){ try{ stop(); setStatus('Starting camera…'); var s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},...v},audio:false}); stream=s; videoElOn(); return true; }catch(e){ errors.push(e.name+': '+e.message); return false; } } var id=cameraSelect.value; if(id && await attempt({deviceId:{exact:id}})) return true; if(await attempt(decideFacing())) return true; var opp=prefFacing.value==='user'?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; if(await attempt(opp)) return true; if(await attempt(true)) return true; setStatus('Failed to start camera. '+errors.join(' | ')); showAndroidBanner(); return false; }
+
+    function videoElOn(){ video.srcObject=stream; video.play().then(function(){ var t=stream.getVideoTracks()[0]; var s=t.getSettings(); setStatus('Camera started ('+s.width+'×'+s.height+')'); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ enumerateCams(); } initScanner(); }).catch(function(e){ setStatus('Video play failed: '+e.message); }); }
+
+    function stop(){ cancelAnimationFrame(scanRAF); scanning=false; if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; } }
+
+    async function initScanner(){ usingBarcodeDetector = ('BarcodeDetector' in window); if(usingBarcodeDetector){ try{ detector=new BarcodeDetector({formats:['qr_code']}); scanEnginePill.textContent='Engine: BarcodeDetector'; scanning=true; return scanLoopDetector(); }catch(e){ usingBarcodeDetector=false; } } scanEnginePill.textContent='Engine: jsQR'; scanning=true; scanLoopJsQR(); }
+
+    async function scanLoopDetector(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopDetector); return; } try{ var bmp=await createImageBitmap(video); var codes=await detector.detect(bmp); if(codes && codes.length){ onScan(codes[0].rawValue, codes[0].format||'qr_code', 'camera'); await new Promise(function(r){ setTimeout(r,350); }); } }catch(e){} scanRAF=requestAnimationFrame(scanLoopDetector); }
+
+    function scanLoopJsQR(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } var w=video.videoWidth, h=video.videoHeight; if(!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ var id=ctx.getImageData(0,0,w,h); var q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q && q.data){ onScan(q.data,'qr_code','camera'); setTimeout(function(){ scanRAF=requestAnimationFrame(scanLoopJsQR); },350); return; } }catch(e){} scanRAF=requestAnimationFrame(scanLoopJsQR); }
+
+    var tbody=$('#logBody'); function render(){ tbody.innerHTML=''; data.forEach(function(r,i){ var tr=document.createElement('tr'); tr.innerHTML='<td class="muted">'+(i+1)+'</td><td>'+esc(r.content)+'</td><td><span class="pill">'+(r.format||'QR')+'</span></td><td class="muted">'+(r.source||'camera')+'</td><td class="muted">'+new Date(r.timestamp).toLocaleString()+'</td><td><span class="count">× '+(r.count||1)+'</span></td><td class="note-cell" contenteditable="true">'+esc(r.notes||'')+'</td><td><button class="small" data-act="edit">Edit</button> <button class="small" data-act="delete">Delete</button></td>'; tr.dataset.id=r.id; tbody.appendChild(tr); }); }
+    function esc(s){ s = (s==null)? '' : s; return (''+s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function upsert(content,format,source){ if(!content) return; if(format==null) format='qr_code'; if(source==null) source='camera'; var now=new Date().toISOString(); var ex=data.find(function(x){ return x.content===content; }); if(ex){ ex.count=(ex.count||1)+1; ex.timestamp=now; save(); render(); beep(); return; } data.unshift({id:crypto.randomUUID(), content:content, format:format, source:source, timestamp:now, count:1, notes:''}); save(); render(); beep(); }
+
+    document.addEventListener('click', function(e){ var btn=e.target; while(btn and btn.tagName!=='BUTTON'){ btn = btn.parentNode; } if(!btn) return; var tr=e.target; while(tr and tr.tagName!=='TR'){ tr = tr.parentNode; } var id=(tr and tr.dataset)? tr.dataset.id : null; var act=btn.getAttribute('data-act'); if(act==='delete' and id){ data = data.filter(function(r){ return r.id!==id; }); save(); render(); } if(act==='edit' and id){ var row=data.find(function(r){ return r.id===id; }); var nv=prompt('Edit QR content:', row?row.content:''); if(nv!==null){ row.content=nv; save(); render(); } } });
+    document.addEventListener('blur', function(e){ var c=e.target; if(!c.classList or !c.classList.contains('note-cell')) return; var tr=c; while(tr and tr.tagName!=='TR'){ tr = tr.parentNode; } var id=(tr and tr.dataset)? tr.dataset.id : null; var row=data.find(function(r){ return r.id===id; }); if(row){ row.notes=c.textContent; save(); } }, true);
+
+    var manualInput=$('#manualInput'); document.getElementById('addManualBtn').addEventListener('click', function(){ var v=manualInput and manualInput.value ? manualInput.value.trim() : ''; if(v) { onScan(v,'text','manual/keyboard'); manualInput.value=''; } }); if(manualInput){ manualInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); var v=manualInput.value.trim(); if(v){ onScan(v,'text','manual/keyboard'); manualInput.value=''; } } }); }
+
+    document.getElementById('exportCsv').addEventListener('click', function(){ var rows=[["QR Content","Format","Source","Timestamp","Count","Notes"]].concat(data.map(function(r){ return [r.content,r.format,r.source,r.timestamp,r.count,r.notes||'']; })); var csv=rows.map(function(r){ return r.map(function(f){ var s=((f==null)?'':f).toString().replaceAll('\"','\"\"'); return /[\",\\n]/.test(s)?('\"'+s+'\"'):s; }).join(','); }).join('\\n'); var blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='qr-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.csv'; a.click(); URL.revokeObjectURL(a.href); });
+    document.getElementById('exportXlsx').addEventListener('click', function(){ var ws=XLSX.utils.json_to_sheet(data.map(function(r){ return {"QR Content":r.content,"Format":r.format,"Source":r.source,"Timestamp":r.timestamp,"Count":r.count,"Notes":r.notes||''}; })); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'QR Log'); XLSX.writeFile(wb,'qr-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.xlsx'); });
+    document.getElementById('importFileBtn').addEventListener('click', function(){ var fi=document.getElementById('fileInput'); if(fi) fi.click(); });
+    document.getElementById('fileInput').addEventListener('change', async function(e){ var file=e.target.files[0]; if(!file) return; var name=(file.name||'').toLowerCase(); if(name.endsWith('.csv')){ var text=await file.text(); var rows=text.split(/\\r?\\n/).map(function(r){ return r.split(/,(?=(?:[^\\\"]*\\\"[^\\\"]*\\\")*[^\\\"]*$)/); }); var b=rows.slice(1); b.forEach(function(cols){ if(!cols.length||!cols[0])return; onScan(cols[0].replaceAll('\\\\\"','\"'),'text','import'); var last=data[0]; last.timestamp=cols[3]||new Date().toISOString(); last.count=parseInt(cols[4]||'1',10); last.notes=(cols[5]||'').replace(/^\\\"|\\\"$/g,''); }); } else { var buf=await file.arrayBuffer(); var wb=XLSX.read(buf,{type:'array'}); var ws=wb.Sheets[wb.SheetNames[0]]; var rows2=XLSX.utils.sheet_to_json(ws); rows2.forEach(function(o){ onScan(o['QR Content'], o['Format']||'qr_code','import'); var last=data[0]; last.timestamp=o['Timestamp']||new Date().toISOString(); last.count=parseInt(o['Count']||'1',10); last.notes=o['Notes']||''; }); } save(); render(); setStatus('Imported data from file.'); e.target.value=''; });
+
+    var remoteToggle=$('#remoteToggle'), remotePanel=$('#remotePanel'), roleSel=$('#role'), startRole=$('#startRole'), remoteStatus=$('#remoteStatus');
+    var hostUI=$('#hostUI'), cameraUI=$('#cameraUI');
+    var createOfferBtn=$('#createOffer'), copyOfferBtn=$('#copyOffer'), offerText=$('#offerText'), offerQR=$('#offerQR');
+    var applyAnswerBtn=$('#applyAnswer'), answerText=$('#answerText');
+    var scanOfferBtn=$('#scanOffer'), applyOfferBtn=$('#applyOffer'), offerInput=$('#offerInput');
+    var copyAnswerCamBtn=$('#copyAnswerCam'), answerOut=$('#answerOut'), answerQR=$('#answerQR');
+
+    var pc=null, dc=null, role='host'; var iceServers=[{urls:'stun:stun.l.google.com:19302'}];
+
     function setRemoteStatus(t){ remoteStatus.textContent=t||''; }
-    function encode(obj){ return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
-    function decode(str){ return JSON.parse(decodeURIComponent(escape(atob(str.trim())))); }
-    function setupPeer(){ if(pc) try{ pc.close(); }catch{} pc=new RTCPeerConnection({iceServers}); pc.oniceconnectionstatechange=()=> setRemoteStatus('ICE: '+pc.iceConnectionState); if(role==='host'){ dc=pc.createDataChannel('qrlog'); wireDC(dc); } else { pc.ondatachannel=(ev)=>{ dc=ev.channel; wireDC(dc); }; } pc.onicegatheringstatechange=()=>{ if(pc.iceGatheringState==='complete' && role==='host') tryRenderOffer(); if(pc.iceGatheringState==='complete' && role==='camera') tryRenderAnswer(); }; }
-    function wireDC(ch){ ch.onopen=()=>{ setRemoteStatus('Connected'); }; ch.onclose=()=> setRemoteStatus('Disconnected'); ch.onmessage=(ev)=>{ try{ const msg=JSON.parse(ev.data); if(msg.type==='qr'){ upsert(msg.content, msg.format||'qr_remote', msg.source||'remote'); } }catch(e){ console.warn('bad msg',e); } }; }
-    async function tryRenderOffer(){ if(!pc?.localDescription) return; offerText.value=encode(pc.localDescription); const s=offerText.value; try{ QRCode.toCanvas(offerQR, s.length>2950?s.slice(0,2950):s); }catch(e){} }
-    async function tryRenderAnswer(){ if(!pc?.localDescription) return; answerOut.value=encode(pc.localDescription); const s=answerOut.value; try{ QRCode.toCanvas(answerQR, s.length>2950?s.slice(0,2950):s); }catch(e){} }
-    createOfferBtn.addEventListener('click', async()=>{ if(!pc) setupPeer(); const offer=await pc.createOffer(); await pc.setLocalDescription(offer); setRemoteStatus('Gathering ICE…'); });
-    copyOfferBtn.addEventListener('click', ()=> navigator.clipboard.writeText(offerText.value));
-    applyAnswerBtn.addEventListener('click', async()=>{ try{ const obj=decode(answerText.value); await pc.setRemoteDescription(obj); setRemoteStatus('Answer applied. Connecting…'); }catch{ alert('Bad answer'); } });
-    applyOfferBtn.addEventListener('click', async()=>{ try{ if(!pc) setupPeer(); const obj=decode(offerInput.value); await pc.setRemoteDescription(obj); const ans=await pc.createAnswer(); await pc.setLocalDescription(ans); setRemoteStatus('Gathering ICE…'); }catch{ alert('Bad offer'); } });
-    scanOfferBtn.addEventListener('click', async()=>{ try{ await requestPermission(); await startFromSelection(); setStatus('Point camera at the host Offer QR…'); const scanOnce=()=>{ const w=video.videoWidth,h=video.videoHeight; if(!w||!h){ requestAnimationFrame(scanOnce); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ const id=ctx.getImageData(0,0,w,h); const q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q && q.data){ offerInput.value=q.data; stop(); setStatus('Offer QR captured. Tap Apply Offer.'); } }catch{} requestAnimationFrame(scanOnce); }; requestAnimationFrame(scanOnce); }catch{ alert('Unable to access camera to scan offer.'); } });
-    copyAnswerCamBtn.addEventListener('click', ()=> navigator.clipboard.writeText(answerOut.value));
-    function onScan(content, format='qr_code', source='camera'){ if(role==='camera' && dc && dc.readyState==='open'){ try{ dc.send(JSON.stringify({type:'qr', content, format, source:'remote-camera'})); }catch{} upsert(content, format, 'remote-local'); } else { upsert(content, format, source); } }
+    function encodeObj(obj){ try{ return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }catch(e){ return ''; } }
+    function decodeObj(str){ try{ return JSON.parse(decodeURIComponent(escape(atob((str||'').trim())))); }catch(e){ return null; } }
 
-    // Buttons
-    $('#permBtn').addEventListener('click', requestPermission);
-    $('#startBtn').addEventListener('click', startFromSelection);
-    $('#stopBtn').addEventListener('click', ()=>{ stop(); setStatus('Camera stopped.'); });
-    $('#refreshBtn').addEventListener('click', enumerateCams);
+    if(remoteToggle){ remoteToggle.addEventListener('click', function(){ remotePanel.style.display = (remotePanel.style.display==='none'?'block':'none'); }); }
+    roleSel && roleSel.addEventListener('change', function(){ role=roleSel.value; renderRole(); });
+    function renderRole(){ if(!hostUI||!cameraUI) return; hostUI.style.display = (role==='host'?'block':'none'); cameraUI.style.display = (role==='camera'?'block':'none'); }
+    renderRole();
+
+    startRole && startRole.addEventListener('click', function(){ setupPeer(); setRemoteStatus('Ready. Follow the steps below.'); });
+
+    function setupPeer(){ try{ if(pc) pc.close(); }catch(e){} pc=new RTCPeerConnection({iceServers:iceServers}); pc.oniceconnectionstatechange=function(){ setRemoteStatus('ICE: '+pc.iceConnectionState); };
+      if(role==='host'){ dc=pc.createDataChannel('qrlog'); wireDC(dc); } else { pc.ondatachannel=function(ev){ dc=ev.channel; wireDC(dc); }; }
+      pc.onicegatheringstatechange=function(){ if(pc.iceGatheringState==='complete'){ if(role==='host'){ tryRenderOffer(); } else { tryRenderAnswer(); } } };
+    }
+
+    function wireDC(ch){ ch.onopen=function(){ setRemoteStatus('Connected'); }; ch.onclose=function(){ setRemoteStatus('Disconnected'); }; ch.onmessage=function(ev){ try{ var msg=JSON.parse(ev.data); if(msg.type==='qr'){ upsert(msg.content, msg.format||'qr_remote', msg.source||'remote'); } }catch(e){} } }
+
+    async function tryRenderOffer(){ if(!pc || !pc.localDescription) return; offerText.value = encodeObj(pc.localDescription); try{ var s=offerText.value; if(window.QRCode){ QRCode.toCanvas(offerQR, s.length>2950?s.slice(0,2950):s); } }catch(e){} }
+    async function tryRenderAnswer(){ if(!pc || !pc.localDescription) return; answerOut.value = encodeObj(pc.localDescription); try{ var s=answerOut.value; if(window.QRCode){ QRCode.toCanvas(answerQR, s.length>2950?s.slice(0,2950):s); } }catch(e){} }
+
+    createOfferBtn && createOfferBtn.addEventListener('click', async function(){ if(!pc) setupPeer(); var offer=await pc.createOffer(); await pc.setLocalDescription(offer); setRemoteStatus('Gathering ICE…'); });
+    copyOfferBtn && copyOfferBtn.addEventListener('click', function(){ if(navigator.clipboard) navigator.clipboard.writeText(offerText.value); });
+
+    applyAnswerBtn && applyAnswerBtn.addEventListener('click', async function(){ var obj=decodeObj(answerText.value); if(!obj){ alert('Bad answer'); return; } try{ await pc.setRemoteDescription(obj); setRemoteStatus('Answer applied. Connecting…'); }catch(e){ alert('Bad answer'); } });
+
+    applyOfferBtn && applyOfferBtn.addEventListener('click', async function(){ if(!pc) setupPeer(); var obj=decodeObj(offerInput.value); if(!obj){ alert('Bad offer'); return; } try{ await pc.setRemoteDescription(obj); var ans=await pc.createAnswer(); await pc.setLocalDescription(ans); setRemoteStatus('Gathering ICE…'); }catch(e){ alert('Bad offer'); } });
+
+    scanOfferBtn && scanOfferBtn.addEventListener('click', async function(){ try{ await requestPermission(); await startFromSelection(); setStatus('Point camera at the host Offer QR…'); var scanOnce=function(){ var w=video.videoWidth, h=video.videoHeight; if(!w||!h){ requestAnimationFrame(scanOnce); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ var id=ctx.getImageData(0,0,w,h); var q=jsQR(id.data,w,h,{inversionAttempts:'dontInvert'}); if(q and q.data){ offerInput.value=q.data; stop(); setStatus('Offer QR captured. Tap Apply Offer.'); } }catch(e){} requestAnimationFrame(scanOnce); }; requestAnimationFrame(scanOnce); }catch(e){ alert('Unable to access camera to scan offer.'); } });
+    copyAnswerCamBtn && copyAnswerCamBtn.addEventListener('click', function(){ if(navigator.clipboard) navigator.clipboard.writeText(answerOut.value); });
+
+    function onScan(content, format, source){ if(!format) format='qr_code'; if(!source) source='camera'; if(role==='camera' && dc && dc.readyState==='open'){ try{ dc.send(JSON.stringify({type:'qr', content:content, format:format, source:'remote-camera'})); }catch(e){} upsert(content, format, 'remote-local'); } else { upsert(content, format, source); } }
+
+    var fb=null, db=null, codeDoc=null, codeUnsubs=[]; var codeInput=$('#pairCode'); var codeStatus=$('#codeStatus'); var codeGenerateBtn=$('#codeGenerate'); var codeJoinBtn=$('#codeJoin');
+    function fbLog(t){ if(codeStatus) codeStatus.textContent=t||''; }
+    function randCode(){ return ''+Math.floor(100000 + Math.random()*900000); }
+    function initFirebase(){ try{ if(!window.FIREBASE_CONFIG || !window.firebase || fb) return false; fb=firebase.initializeApp(window.FIREBASE_CONFIG); db=firebase.firestore(); return true; }catch(e){ return false; } }
+    async function cleanupCodeDoc(){ try{ codeUnsubs.forEach(function(u){ try{u&&u();}catch(e){} }); codeUnsubs=[]; if(codeDoc){ try{ await codeDoc.delete(); }catch(e){} codeDoc=null; } }catch(e){} }
+
+    async function codeHostStart(){ if(!initFirebase()){ fbLog('Pairing not configured. Add pairing‑config.js'); return; } await cleanupCodeDoc(); var code=randCode(); if(codeInput) codeInput.value=code; codeDoc = db.collection('qrRooms').doc(code); await codeDoc.set({ created: firebase.firestore.FieldValue.serverTimestamp() }); var offer = await pc.createOffer({ offerToReceiveAudio:false, offerToReceiveVideo:false }); await pc.setLocalDescription(offer); await new Promise(function(res){ (function chk(){ if(pc.iceGatheringState==='complete') res(); else setTimeout(chk,50); })(); }); await codeDoc.set({ offer: pc.localDescription.toJSON(), created: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }); fbLog('Share the 6‑digit code and wait for answer…'); codeUnsubs.push(codeDoc.onSnapshot(async function(snap){ var data=snap.data(); if(!data || !data.answer) return; try{ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); fbLog('Connected by code.'); setTimeout(function(){ cleanupCodeDoc(); }, 30000); }catch(e){ fbLog('Bad answer. Try again.'); } })); }
+
+    async function codeCameraJoin(){ if(!initFirebase()){ fbLog('Pairing not configured. Add pairing‑config.js'); return; } var code=(codeInput and codeInput.value or '').trim(); if(!/^\\d{6}$/.test(code)){ fbLog('Enter a 6‑digit code.'); return; } codeDoc = db.collection('qrRooms').doc(code); var snap = await codeDoc.get(); var data=snap.data(); if(!data || !data.offer){ fbLog('No offer for this code yet.'); return; } try{ await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); var answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await new Promise(function(res){ (function chk(){ if(pc.iceGatheringState==='complete') res(); else setTimeout(chk,50); })(); }); await codeDoc.set({ answer: pc.localDescription.toJSON() }, { merge:true }); fbLog('Answer posted. Connecting…'); setTimeout(function(){ cleanupCodeDoc(); }, 30000); }catch(e){ fbLog('Failed to join with this code.'); }
+    }
+
+    document.getElementById('codeGenerate').addEventListener('click', function(){ if(!pc) setupPeer(); if(role!=='host'){ fbLog('Switch role to Host.'); return; } codeHostStart(); });
+    document.getElementById('codeJoin').addEventListener('click', function(){ if(!pc) setupPeer(); if(role!=='camera'){ fbLog('Switch role to Camera.'); return; } codeCameraJoin(); });
+
+    document.getElementById('permBtn').addEventListener('click', requestPermission);
+    document.getElementById('startBtn').addEventListener('click', startFromSelection);
+    document.getElementById('stopBtn').addEventListener('click', function(){ stop(); setStatus('Camera stopped.'); });
+    document.getElementById('refreshBtn').addEventListener('click', enumerateCams);
     cameraSelect.addEventListener('change', startFromSelection);
 
-    load(); render(); updatePerm(); enumerateCams(); showAndroidBanner();
+    load(); render(); updatePerm(); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ enumerateCams(); } showAndroidBanner();
     if(document.visibilityState==='visible') setStatus('Ready. Request Permission → Start Camera.');
-  }();
+  })();
 
-  function beep(){ try{ const a=new AudioContext(), o=a.createOscillator(), g=a.createGain(); o.type='square'; o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.05,a.currentTime); o.start(); setTimeout(()=>{o.stop(); a.close();},90);}catch{} }
+  function beep(){ try{ var a=new AudioContext(), o=a.createOscillator(), g=a.createGain(); o.type='square'; o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.05,a.currentTime); o.start(); setTimeout(function(){o.stop(); a.close();},90);}catch(e){} }
   </script>
 </body>
 </html>
