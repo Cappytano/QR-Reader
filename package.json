@@ -1,0 +1,13 @@
+{
+  "name": "qr-logger-webapp",
+  "private": true,
+  "version": "3.0.0",
+  "description": "QR logger for browser with Excel/CSV export",
+  "scripts": {
+    "start": "node server.js",
+    "start:https": "node server.js --https"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

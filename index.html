@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>QR Logger — Browser App</title>
+  <meta name="theme-color" content="#0f172a"/>
+  <style>
+    :root { --bg:#0b1220; --panel:#0f172a; --muted:#94a3b8; --text:#e2e8f0; --accent:#22c55e; --border:#1f2937; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px; }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:radial-gradient(1200px 800px at 10% -10%, #0c152a, var(--bg) 40%);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+    header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    h1{font-size:22px;margin:0;letter-spacing:.2px}
+    .subtitle{color:var(--muted);font-size:13px;margin-top:2px}
+    .grid{display:grid;gap:16px;grid-template-columns:1fr}
+    @media(min-width:980px){.grid{grid-template-columns:420px 1fr}}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .card h2{margin:0 0 10px 0;font-size:16px;color:#cbd5e1;font-weight:600}
+    .card .content{padding:16px}
+    .video-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
+    video{width:100%;height:auto;display:block}
+    .frame{position:absolute;inset:0;pointer-events:none;border:2px dashed rgba(255,255,255,.25);border-radius:12px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    .controls>*{flex:1 1 auto}
+    button,select,input[type="text"]{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
+    button{cursor:pointer;transition:.2s transform}
+    button.primary{background:linear-gradient(180deg,#1f7a3b,#14532d);border-color:#134e4a}
+    button.secondary{background:linear-gradient(180deg,#0b2a64,#0b1f3a);border-color:#0b1f3a}
+    button.warn{background:linear-gradient(180deg,#9a5a05,#78350f);border-color:#5a2e0b}
+    button.danger{background:linear-gradient(180deg,#7f1d1d,#3f0f0f);border-color:#3f0f0f}
+    button:active{transform:translateY(1px) scale(.99)}
+    .status{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}
+    .toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+    table{width:100%;border-collapse:collapse}
+    thead th{position:sticky;top:0;background:#0e172a;z-index:1;border-bottom:1px solid var(--border);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#93a3b8;padding:10px 8px;text-align:left}
+    tbody td{border-bottom:1px solid var(--border);padding:8px;vertical-align:top;font-size:14px}
+    tbody tr:hover{background:rgba(255,255,255,.02)}
+    .muted{color:var(--muted);font-size:12px}
+    .nowrap{white-space:nowrap}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#0b2a64;border:1px solid #0b1f3a;color:#cfe1ff}
+    .count{display:inline-flex;align-items:center;gap:6px;background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:2px 8px;font-size:12px}
+    .note-cell[contenteditable="true"]{outline:1px dashed rgba(255,255,255,.15)}
+    .row-actions{display:flex;gap:6px}
+    .small{font-size:12px}
+    .hidden{display:none!important}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>QR Logger</h1>
+      <div class="subtitle">Optimized for Windows 11 + Chrome/Edge. Localhost & deployable.</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="grid">
+      <section class="card">
+        <div class="content">
+          <h2>Scanner</h2>
+
+          <div class="video-wrap">
+            <video id="video" playsinline muted></video>
+            <div class="frame"></div>
+            <canvas id="canvas" class="hidden"></canvas>
+          </div>
+
+          <div class="controls" style="margin-top: 12px;">
+            <button id="permBtn" class="secondary">Request Permission</button>
+            <button id="startBtn" class="primary">Start Camera</button>
+            <button id="stopBtn" class="secondary">Stop</button>
+          </div>
+
+          <div class="controls" style="margin-top: 8px;">
+            <select id="cameraSelect" title="Choose Camera"></select>
+            <button id="refreshBtn" class="secondary">Refresh Cameras</button>
+            <select id="prefFacing">
+              <option value="environment">Prefer Back</option>
+              <option value="user" selected>Prefer Front</option>
+              <option value="auto">Auto</option>
+            </select>
+          </div>
+
+          <div class="controls" style="margin-top: 8px;">
+            <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
+            <button id="addManualBtn">Add</button>
+          </div>
+
+          <div class="controls" style="margin-top: 8px;">
+            <label class="toggle"><input type="checkbox" id="dedupe" checked/> Deduplicate identical codes</label>
+            <label class="toggle"><input type="checkbox" id="beep" checked/> Beep on scan</label>
+            <span id="scanEngine" class="pill">Engine: Detecting…</span>
+          </div>
+
+          <div class="status" id="status"></div>
+          <div class="muted small" style="margin-top:6px" id="permState"></div>
+          <div class="muted small" style="margin-top:6px">
+            Tip: Use <b>localhost</b> or HTTPS. On Windows 11, check <i>Settings → Privacy & security → Camera</i> and browser site permissions if access fails.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="content">
+          <h2>Log</h2>
+
+          <div class="controls" style="margin-bottom: 8px;">
+            <button id="exportXlsx" class="primary">Export Excel (.xlsx)</button>
+            <button id="exportCsv" class="secondary">Export CSV</button>
+            <button id="importFileBtn" class="secondary">Import</button>
+            <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" class="hidden"/>
+            <button id="clearBtn" class="warn">Clear</button>
+          </div>
+
+          <div class="card" style="max-height: 55vh; overflow: auto;">
+            <table id="logTable">
+              <thead>
+                <tr>
+                  <th class="nowrap">#</th>
+                  <th>QR Content</th>
+                  <th>Format</th>
+                  <th>Source</th>
+                  <th>Timestamp</th>
+                  <th>Count</th>
+                  <th>Notes (editable)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="logBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+
+  <script>
+  (() => {
+    const $ = sel => document.querySelector(sel);
+    const video = $("#video");
+    const canvas = $("#canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const statusEl = $("#status");
+    const cameraSelect = $("#cameraSelect");
+    const prefFacing = $("#prefFacing");
+    const scanEnginePill = $("#scanEngine");
+    const beepToggle = $("#beep");
+    const dedupeToggle = $("#dedupe");
+    const manualInput = $("#manualInput");
+    const permStateEl = $("#permState");
+
+    let stream = null;
+    let scanning = false;
+    let usingBarcodeDetector = false;
+    let detector = null;
+    let scanRAF = 0;
+    let data = []; // {id, content, format, source, timestamp, count, notes}
+
+    const STORAGE_KEY = "qrLoggerV1";
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    function isMobile(){ return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
+
+    // UI helpers
+    function setStatus(msg){ statusEl.textContent = msg || ""; }
+    function beep(){
+      if (!beepToggle.checked) return;
+      try{
+        const a = new AudioContext(); const o = a.createOscillator(); const g = a.createGain();
+        o.type="square"; o.frequency.value=880; o.connect(g); g.connect(a.destination);
+        g.gain.setValueAtTime(0.05, a.currentTime); o.start(); setTimeout(()=>{ o.stop(); a.close(); }, 90);
+      }catch{}
+    }
+
+    // Permissions API (best effort)
+    async function updatePermState(){
+      if (!('permissions' in navigator)) { permStateEl.textContent = ""; return; }
+      try{
+        const s = await navigator.permissions.query({ name: 'camera' });
+        permStateEl.textContent = `Permission: ${s.state}`;
+        s.onchange = () => permStateEl.textContent = `Permission: ${s.state}`;
+      }catch{ permStateEl.textContent = ""; }
+    }
+
+    async function requestPermission(){
+      try{
+        setStatus("Requesting camera permission…");
+        await navigator.mediaDevices.getUserMedia({ video: decideFacing(), audio: false });
+        setStatus("Permission granted.");
+      }catch(e){
+        setStatus(`Permission request failed: ${e.name}: ${e.message}`);
+      }finally{
+        await listCameras(); await updatePermState(); stop();
+      }
+    }
+
+    // Persistence
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+    function load(){ try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }catch{ data = []; } }
+
+    // Table rendering
+    function render(){
+      const tbody = $("#logBody"); tbody.innerHTML = "";
+      data.forEach((row, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="nowrap muted">\${idx+1}</td>
+          <td class="content-cell">\${escapeHtml(row.content)}</td>
+          <td><span class="pill">\${row.format || "QR"}</span></td>
+          <td class="muted">\${row.source || "camera"}</td>
+          <td class="muted">\${new Date(row.timestamp).toLocaleString()}</td>
+          <td><span class="count">× \${row.count || 1}</span></td>
+          <td class="note-cell" contenteditable="true">\${escapeHtml(row.notes || "")}</td>
+          <td class="row-actions">
+            <button class="small" data-act="edit">Edit</button>
+            <button class="small danger" data-act="delete">Delete</button>
+          </td>`;
+        tr.dataset.id = row.id; tbody.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(str){ return (str ?? "").toString().replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+
+    function upsert(content, format="qr_code", source="camera"){
+      if (!content) return;
+      const now = new Date().toISOString();
+      if (dedupeToggle.checked){
+        const existing = data.find(r => r.content === content);
+        if (existing){ existing.count = (existing.count || 1) + 1; existing.timestamp = now; save(); render(); beep(); return; }
+      }
+      data.unshift({ id: crypto.randomUUID(), content, format, source, timestamp: now, count: 1, notes: "" });
+      save(); render(); beep();
+    }
+
+    // Row actions
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("button"); if (!btn) return;
+      const tr = e.target.closest("tr"); const id = tr?.dataset?.id; const act = btn.dataset.act;
+      if (act === "delete" && id){ data = data.filter(r => r.id !== id); save(); render(); }
+      else if (act === "edit" && id){ const row = data.find(r => r.id === id); const nv = prompt("Edit QR content:", row.content); if (nv !== null){ row.content = nv; save(); render(); } }
+    });
+
+    // Notes editing
+    document.addEventListener("blur", (e) => {
+      const cell = e.target; if (!cell.classList.contains("note-cell")) return;
+      const tr = cell.closest("tr"); const id = tr?.dataset?.id; if (!id) return;
+      const row = data.find(r => r.id === id); if (row){ row.notes = cell.textContent; save(); }
+    }, true);
+
+    // Manual / keyboard input
+    const manualAdd = () => { const v = manualInput.value.trim(); if (v) upsert(v, "text", "manual/keyboard"); manualInput.value=""; };
+    manualInput.addEventListener("keydown", (e) => { if (e.key === "Enter"){ e.preventDefault(); manualAdd(); } });
+    $("#addManualBtn").addEventListener("click", manualAdd);
+
+    // Camera handling
+    async function listCameras(){
+      try{
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === "videoinput");
+        cameraSelect.innerHTML = "";
+        if (!cams.length){
+          const opt = document.createElement("option"); opt.textContent = "No cameras detected"; opt.value=""; cameraSelect.appendChild(opt);
+          setStatus("No cameras found. Ensure permission is granted, then click Refresh.");
+          return;
+        }
+        cams.forEach((c,i)=>{ const opt=document.createElement("option"); opt.value=c.deviceId||""; opt.textContent=c.label||`Camera ${i+1}`; cameraSelect.appendChild(opt); });
+      }catch(e){ setStatus("enumerateDevices failed: " + e.message); }
+    }
+
+    function decideFacing(){
+      const pref = prefFacing.value;
+      if (pref === "environment") return { facingMode: { ideal: "environment" } };
+      if (pref === "user") return { facingMode: { ideal: "user" } };
+      // Auto: mobile prefer back, desktop prefer front
+      if (isMobile()) return { facingMode: { ideal: "environment" } };
+      return { facingMode: { ideal: "user" } };
+    }
+
+    async function applyWindowsOptimizedConstraints(track){
+      if (!track?.applyConstraints) return;
+      try{
+        const caps = track.getCapabilities?.() || {};
+        const cons = {
+          advanced: []
+        };
+        // Prefer 1280x720 or 1920x1080 @ ~30fps for laptop cams
+        cons.advanced.push({ width: { ideal: Math.min(1920, caps.width?.max || 1920) }, height: { ideal: Math.min(1080, caps.height?.max || 1080) } });
+        cons.advanced.push({ frameRate: { ideal: Math.min(30, caps.frameRate?.max || 30) } });
+        // Continuous autofocus when supported
+        if (caps.focusMode && caps.focusMode.includes("continuous")) cons.advanced.push({ focusMode: "continuous" });
+        await track.applyConstraints(cons);
+      }catch(e){
+        console.warn("applyConstraints failed:", e);
+      }
+    }
+
+    async function tryStartSequence(deviceId){
+      let errors = [];
+      async function attempt(video){
+        try{
+          stop();
+          const constraints = { video: { width:{ideal:1280}, height:{ideal:720}, ...video }, audio:false };
+          setStatus("Starting camera…");
+          const s = await navigator.mediaDevices.getUserMedia(constraints);
+          stream = s;
+          const track = stream.getVideoTracks()[0];
+          await applyWindowsOptimizedConstraints(track);
+          video.srcObject = stream;
+          await video.play();
+          const settings = track.getSettings();
+          setStatus(`Camera started (${settings.width}×${settings.height} @ ~${settings.frameRate||"?"}fps)`);
+          listCameras();
+          initScanner();
+          return true;
+        }catch(e){ errors.push(e.name + ": " + e.message); return false; }
+      }
+      if (deviceId){ if (await attempt({ deviceId: { exact: deviceId } })) return true; }
+      if (await attempt(decideFacing())) return true;
+      const opposite = prefFacing.value === "user" ? { facingMode: { ideal: "environment" } } : { facingMode: { ideal: "user" } };
+      if (await attempt(opposite)) return true;
+      if (await attempt(true)) return true;
+      setStatus("Failed to start camera. Tried multiple constraints. Errors: " + errors.join(" | "));
+      return false;
+    }
+
+    function stop(){
+      cancelAnimationFrame(scanRAF);
+      scanning = false;
+      if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+    }
+
+    $("#startBtn").addEventListener("click", async()=>{ await updatePermState(); await tryStartSequence(cameraSelect.value || undefined); });
+    $("#stopBtn").addEventListener("click", ()=>{ stop(); setStatus("Camera stopped."); });
+    $("#refreshBtn").addEventListener("click", listCameras);
+    $("#permBtn").addEventListener("click", requestPermission);
+    cameraSelect.addEventListener("change", ()=>{ const id=cameraSelect.value; if (id) tryStartSequence(id); });
+
+    if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices){ navigator.mediaDevices.ondevicechange = ()=>{ listCameras(); }; }
+
+    // Scanning
+    async function initScanner(){
+      usingBarcodeDetector = "BarcodeDetector" in window;
+      if (usingBarcodeDetector){
+        try{
+          detector = new BarcodeDetector({ formats: ["qr_code"] });
+          scanEnginePill.textContent = "Engine: BarcodeDetector";
+          scanning = true; scanLoopDetector(); return;
+        }catch{ usingBarcodeDetector=false; }
+      }
+      scanEnginePill.textContent = "Engine: jsQR";
+      scanning = true; scanLoopJsQR();
+    }
+
+    async function scanLoopDetector(){
+      if (!scanning || !video || video.readyState < 2){ scanRAF = requestAnimationFrame(scanLoopDetector); return; }
+      try{
+        const w=video.videoWidth, h=video.videoHeight; if (!w||!h){ scanRAF=requestAnimationFrame(scanLoopDetector); return; }
+        const bitmap = await createImageBitmap(video);
+        const codes = await detector.detect(bitmap);
+        if (codes && codes.length){ const c=codes[0]; upsert(c.rawValue, c.format||"qr_code", "camera"); await sleep(350); }
+      }catch{}
+      scanRAF = requestAnimationFrame(scanLoopDetector);
+    }
+
+    function scanLoopJsQR(){
+      if (!scanning || !video || video.readyState < 2){ scanRAF = requestAnimationFrame(scanLoopJsQR); return; }
+      const w=video.videoWidth, h=video.videoHeight; if (!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; }
+      canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h);
+      try{
+        const imageData = ctx.getImageData(0,0,w,h);
+        const qrcode = jsQR(imageData.data, w, h, { inversionAttempts:"dontInvert" });
+        if (qrcode && qrcode.data){ upsert(qrcode.data, "qr_code", "camera"); setTimeout(()=>{ scanRAF=requestAnimationFrame(scanLoopJsQR); }, 350); return; }
+      }catch{}
+      scanRAF = requestAnimationFrame(scanLoopJsQR);
+    }
+
+    // Export
+    $("#exportCsv").addEventListener("click", () => {
+      const rows = [["QR Content","Format","Source","Timestamp","Count","Notes"], ...data.map(r => [r.content,r.format,r.source,r.timestamp,r.count,r.notes||""])];
+      const csv = rows.map(r => r.map(field => {
+        const s = (field ?? "").toString().replaceAll('"','""'); return /[",\n]/.test(s) ? \"\"${s}\\" : s;
+      }).join(",")).join("\n");
+      const blob = new Blob([csv], { type:"text/csv;charset=utf-8" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = \`qr-log-\${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv\`; a.click(); URL.revokeObjectURL(a.href);
+    });
+
+    $("#exportXlsx").addEventListener("click", () => {
+      const ws = XLSX.utils.json_to_sheet(data.map(r => ({"QR Content":r.content,"Format":r.format,"Source":r.source,"Timestamp":r.timestamp,"Count":r.count,"Notes":r.notes||""})));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "QR Log");
+      XLSX.writeFile(wb, \`qr-log-\${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.xlsx\`);
+    });
+
+    // Import
+    $("#importFileBtn").addEventListener("click", () => $("#fileInput").click());
+    $("#fileInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const name = file.name.toLowerCase();
+      if (name.endsWith(".csv")){
+        const text = await file.text();
+        const rows = text.split(/\r?\n/).map(r => r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/));
+        const [header, ...body] = rows;
+        body.forEach(cols => {
+          if (!cols.length || !cols[0]) return;
+          upsert(cols[0].replaceAll('\"','"'), cols[1] || "qr_code", cols[2] || "import");
+          const last = data[0];
+          last.timestamp = cols[3] || new Date().toISOString();
+          last.count = parseInt(cols[4] || "1", 10);
+          last.notes = (cols[5] || "").replace(/^"|"$/g,"");
+        });
+      }else{
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws);
+        rows.forEach(obj => {
+          upsert(obj["QR Content"], obj["Format"] || "qr_code", obj["Source"] || "import");
+          const last = data[0];
+          last.timestamp = obj["Timestamp"] || new Date().toISOString();
+          last.count = parseInt(obj["Count"] || "1", 10);
+          last.notes = obj["Notes"] || "";
+        });
+      }
+      save(); render(); setStatus("Imported data from file."); e.target.value = "";
+    });
+
+    // Init
+    load(); render(); updatePermState(); listCameras().then(()=> setStatus("Ready. Click Start Camera to begin."));
+  })();
+  </script>
+</body>
+</html>
