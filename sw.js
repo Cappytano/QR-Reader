@@ -1,4 +1,4 @@
-const CACHE = 'qr-logger-v5-3-1';
+const CACHE = 'qr-logger-v5-3-2';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', event => {

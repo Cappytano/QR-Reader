@@ -5,7 +5,6 @@ const app = express();
 const port = process.env.PORT || 8080;
 
 app.use((req,res,next)=>{
-  // ensure .webmanifest gets a correct content-type
   if (req.path.endsWith('.webmanifest')) res.type('application/manifest+json');
   next();
 });
