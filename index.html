@@ -90,6 +90,48 @@
           <button id="zoomOut" class="secondary">Zoom −</button>
           <button id="flipBtn" class="secondary">Flip (mirror)</button>
         </div>
+        <!-- === Weight Capture additions: Controls === -->
+        <div class="controls" style="margin-top:8px; flex-wrap:wrap; gap:8px">
+          <label for="weightDelay" title="Seconds to wait after scan before capturing weight/photo">
+            Delay (s)
+          </label>
+          <input id="weightDelay" type="number" min="0" max="10" step="0.1" value="3" style="width:90px" />
+
+          <label for="weightSource" title="Where to read weight from">
+            Weight source
+          </label>
+          <select id="weightSource">
+            <option value="auto" selected>Auto (USB → BLE → OCR)</option>
+            <option value="serial">USB / Serial</option>
+            <option value="ble">Bluetooth (BLE)</option>
+            <option value="ocr">Camera OCR</option>
+          </select>
+
+          <button id="connectScale" class="secondary" title="Connect to the selected source">Connect Scale</button>
+          <button id="disconnectScale" class="secondary" title="Disconnect the scale">Disconnect</button>
+          <span id="scaleStatus" class="muted" style="min-width:240px">Scale: not connected</span>
+        </div>
+
+        <div class="controls" style="margin-top:8px; flex-wrap:wrap; gap:8px">
+          <label for="scaleRoi" title="Region used for OCR when Weight source is OCR or Auto fallback">
+            Scale ROI
+          </label>
+          <select id="scaleRoi">
+            <option value="center" selected>Center small box</option>
+            <option value="bottom">Bottom strip</option>
+            <option value="full">Full frame</option>
+          </select>
+
+          <label><input id="remotePhoto" type="checkbox" checked />
+            Ask remote camera to capture the photo at delay
+          </label>
+
+          <label><input id="captureOnRepeat" type="checkbox" />
+            Capture on repeat scans (otherwise only first insert)
+          </label>
+        </div>
+        <!-- === /Weight Capture additions === -->
+
         <div class="controls" style="margin-top:8px">
           <label class="sr-only" for="manualInput">Manual QR entry</label>
           <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
@@ -112,7 +154,7 @@
         <div class="card" style="max-height:55vh;overflow:auto">
           <table id="logTable">
             <thead><tr>
-              <th>#</th><th>QR Content</th><th>Format</th><th>Source</th><th>Timestamp</th><th>Count</th><th>Notes (editable)</th><th>Actions</th>
+              <th>#</th><th>QR Content</th><th>Format</th><th>Source</th><th>Timestamp</th><th>Count</th><th>Weight</th><th>Measured At</th><th>Photo</th><th>Notes (editable)</th><th>Actions</th>
             </tr></thead>
             <tbody id="logBody"></tbody>
           </table>
@@ -320,5 +362,421 @@
 
   function beep(){ try{ var a=new AudioContext(), o=a.createOscillator(), g=a.createGain(); o.type='square'; o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.05,a.currentTime); o.start(); setTimeout(function(){o.stop(); a.close();},90);}catch(e){} }
   </script>
+
+<script>
+// === Weight & Photo Capture Extensions ===
+(function(){
+  // --- Element helpers ---
+  function $(sel){ return document.querySelector(sel); }
+
+  // --- State ---
+  var weightDelaySec = parseFloat(localStorage.getItem('weightDelaySec') || '3');
+  var weightSourcePref = localStorage.getItem('weightSourcePref') || 'auto';
+  var scaleRoi = localStorage.getItem('scaleRoi') || 'center';
+  var captureOnRepeat = localStorage.getItem('captureOnRepeat') === '1';
+
+  var serialPort = null, serialReader = null, serialBuf = '';
+  var bleDevice = null, bleServer = null, bleChar = null;
+
+  var lastSerialSample = null;   // {value, unit, at, source:'serial'}
+  var lastBleSample = null;      // {value, unit, at, source:'ble'}
+
+  function setScaleStatus(t){ var el = $('#scaleStatus'); if (el) el.textContent = 'Scale: ' + (t||''); }
+
+  // Wire inputs once DOM exists
+  document.addEventListener('DOMContentLoaded', function(){
+    var el;
+
+    el = $('#weightDelay'); if (el){ el.value = String(weightDelaySec); el.addEventListener('change', function(){
+      weightDelaySec = Math.max(0, parseFloat(this.value||'0')||0);
+      localStorage.setItem('weightDelaySec', String(weightDelaySec));
+    });}
+
+    el = $('#weightSource'); if (el){ el.value = weightSourcePref; el.addEventListener('change', function(){
+      weightSourcePref = this.value;
+      localStorage.setItem('weightSourcePref', weightSourcePref);
+      if (weightSourcePref==='ocr' || weightSourcePref==='auto') setScaleStatus('OCR requires no connection. Ready.');
+    });}
+
+    el = $('#scaleRoi'); if (el){ el.value = scaleRoi; el.addEventListener('change', function(){
+      scaleRoi = this.value;
+      localStorage.setItem('scaleRoi', scaleRoi);
+    });}
+
+    el = $('#captureOnRepeat'); if (el){ el.checked = captureOnRepeat; el.addEventListener('change', function(){
+      captureOnRepeat = !!this.checked;
+      localStorage.setItem('captureOnRepeat', captureOnRepeat ? '1':'0');
+    });}
+
+    el = $('#connectScale'); if (el){ el.addEventListener('click', async function(){
+      var src = ($('#weightSource')||{}).value || 'auto';
+      if (src === 'serial') return connectSerial();
+      if (src === 'ble')    return connectBLE();
+      if (src === 'ocr' || src === 'auto') setScaleStatus('OCR requires no connection. Ready.');
+    });}
+
+    el = $('#disconnectScale'); if (el){ el.addEventListener('click', async function(){
+      await disconnectSerial(); await disconnectBLE();
+    });}
+  });
+
+  // --- Snapshot & OCR ---
+  function snapshotFrame() {
+    var video = document.getElementById('video');
+    if (!video) throw new Error('No video element');
+    var c = document.createElement('canvas');
+    c.width = video.videoWidth || video.clientWidth || 640;
+    c.height = video.videoHeight || video.clientHeight || 480;
+    var cctx = c.getContext('2d');
+
+    var mirrored = (video.style.transform || '').includes('scaleX(-1)');
+    if (mirrored) { cctx.translate(c.width, 0); cctx.scale(-1, 1); }
+    cctx.drawImage(video, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function cropForScaleROI(fullCanvas) {
+    var w = fullCanvas.width, h = fullCanvas.height;
+    var cx, cy, cw, ch;
+    if (scaleRoi === 'bottom') {
+      cx = 0; cy = Math.floor(h*0.65); cw = w; ch = Math.floor(h*0.35);
+    } else if (scaleRoi === 'full') {
+      cx = 0; cy = 0; cw = w; ch = h;
+    } else {
+      cw = Math.floor(w*0.35); ch = Math.floor(h*0.22);
+      cx = Math.floor((w - cw)/2);
+      cy = Math.floor((h - ch)/2);
+    }
+    var c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    c.getContext('2d').drawImage(fullCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
+    return c;
+  }
+
+  var tesseractReady = false;
+  async function ensureTesseract() {
+    if (tesseractReady) return;
+    await new Promise(function(res, rej){
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    tesseractReady = true;
+  }
+
+  async function ocrWeightFromFrame() {
+    await ensureTesseract();
+    var full = snapshotFrame();
+    var roi = cropForScaleROI(full);
+    var ctx = roi.getContext('2d'), img = ctx.getImageData(0,0,roi.width,roi.height), d=img.data;
+    for (var i=0;i<d.length;i+=4){ var y = 0|(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]); d[i]=d[i+1]=d[i+2]=y; }
+    ctx.putImageData(img,0,0);
+
+    var res = await Tesseract.recognize(roi, 'eng', { tessedit_char_whitelist: '0123456789.-', classify_bln_numeric_mode: 1 });
+    var text = (res && res.data && res.data.text) ? res.data.text : '';
+    var m = text.replace(/[, ]/g,'').match(/-?\\d+(?:\\.\\d+)?/);
+    if (!m) return null;
+    return { value: parseFloat(m[0]), unit: null, source: 'ocr', at: new Date().toISOString(), photo: full.toDataURL('image/jpeg', 0.85) };
+  }
+
+  // --- Web Serial (USB) ---
+  async function connectSerial() {
+    try {
+      if (!('serial' in navigator)) throw new Error('Web Serial not supported');
+      serialPort = await navigator.serial.requestPort();
+      await serialPort.open({ baudRate: 9600 });
+      serialReader = serialPort.readable.getReader();
+      setScaleStatus('USB/Serial connected');
+      readSerialLoop();
+    } catch (e) { setScaleStatus('Serial connect failed: ' + e.message); }
+  }
+  async function disconnectSerial() {
+    try { if (serialReader) { await serialReader.cancel(); serialReader.releaseLock(); } } catch(e){}
+    try { if (serialPort) { await serialPort.close(); } } catch(e){}
+    serialReader = null; serialPort = null;
+    setScaleStatus('USB/Serial disconnected');
+  }
+  async function readSerialLoop() {
+    serialBuf = '';
+    while (serialReader) {
+      try {
+        const { value, done } = await serialReader.read();
+        if (done) break;
+        if (value) {
+          serialBuf += new TextDecoder().decode(value);
+          let lines = serialBuf.split(/\\r?\\n/);
+          serialBuf = lines.pop() || '';
+          for (let line of lines) {
+            let sample = parseSerialLine(line);
+            if (sample) lastSerialSample = sample;
+          }
+        }
+      } catch (e) {
+        setScaleStatus('Serial read error: ' + e.message); break;
+      }
+    }
+  }
+  function parseSerialLine(line) {
+    let m = (line||'').trim().match(/(-?\\d+(?:\\.\\d+)?)\\s*(kg|g|lb|lbs|oz)?/i);
+    if (!m) return null;
+    let unit = (m[2]||'').toLowerCase();
+    if (unit === 'lbs') unit = 'lb';
+    return { value: parseFloat(m[1]), unit: unit || null, source: 'serial', at: new Date().toISOString() };
+  }
+
+  // --- Web Bluetooth (BLE Weight Scale) ---
+  async function connectBLE() {
+    try {
+      if (!navigator.bluetooth) throw new Error('Web Bluetooth not supported');
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ['weight_scale'] }],
+        optionalServices: ['weight_scale']
+      });
+      bleServer = await bleDevice.gatt.connect();
+      const svc = await bleServer.getPrimaryService('weight_scale');
+      bleChar = await svc.getCharacteristic(0x2A9D);
+      await bleChar.startNotifications();
+      bleChar.addEventListener('characteristicvaluechanged', onBleWeight);
+      setScaleStatus('BLE weight scale connected');
+    } catch (e) { setScaleStatus('BLE connect failed: ' + e.message); }
+  }
+  async function disconnectBLE() {
+    try { if (bleChar) await bleChar.stopNotifications(); } catch(e){}
+    bleChar = null;
+    try { if (bleServer && bleServer.connected) bleServer.disconnect(); } catch(e){}
+    bleServer = null; bleDevice = null;
+    setScaleStatus('BLE disconnected');
+  }
+  function parseSfloat(v) {
+    let raw = v & 0xFFFF;
+    let mantissa = raw & 0x0FFF;
+    let exponent = (raw & 0xF000) >> 12;
+    if (mantissa & 0x0800) mantissa = -((~mantissa & 0x0FFF) + 1);
+    if (exponent & 0x8) exponent = -((~exponent & 0xF) + 1);
+    return mantissa * Math.pow(10, exponent);
+  }
+  function onBleWeight(ev) {
+    let dv = ev.target.value;
+    let flags = dv.getUint8(0);
+    let raw = dv.getUint16(1, true);
+    let weight = parseSfloat(raw);
+    let unit = (flags & 0x01) ? 'lb' : 'kg';
+    lastBleSample = { value: weight, unit, source: 'ble', at: new Date().toISOString() };
+  }
+
+  // --- Orchestration ---
+  function nowISO(){ return new Date().toISOString(); }
+
+  function scheduleWeightAndPhoto(rowId) {
+    var delayMs = Math.round(weightDelaySec * 1000);
+    var targetAt = Date.now() + delayMs;
+
+    var row = (window.data||[]).find(function(r){ return r.id === rowId; });
+    if (!row) return;
+    row.capturePlannedAt = new Date(targetAt).toISOString();
+    row.captureStatus = 'pending';
+    try{ window.save && window.save(); window.render && window.render(); }catch(e){}
+
+    try {
+      var askRemote = (document.getElementById('remotePhoto')||{}).checked;
+      if (askRemote && window.role === 'host' && window.dc && window.dc.readyState === 'open') {
+        window.dc.send(JSON.stringify({ type:'capture-request', rowId: rowId, captureAt: targetAt, scaleRoi: scaleRoi }));
+      }
+    } catch(e){}
+
+    setTimeout(function(){ performCapture(rowId); }, delayMs);
+  }
+
+  async function performCapture(rowId) {
+    var row = (window.data||[]).find(function(r){ return r.id === rowId; });
+    if (!row) return;
+    try {
+      var localPhoto = null;
+      try { localPhoto = snapshotFrame().toDataURL('image/jpeg', 0.85); } catch(e){}
+
+      var reading = await getWeightReading();
+      var measureAt = nowISO();
+
+      if (reading) {
+        row.weight = reading.value;
+        row.weightUnit = reading.unit || row.weightUnit || null;
+        row.weightSource = reading.source || weightSourcePref;
+      }
+      if (!row.photo && localPhoto) row.photo = localPhoto;
+      row.measuredAt = measureAt;
+      row.captureStatus = 'done';
+
+      window.save && window.save(); window.render && window.render();
+    } catch (e) {
+      row.captureStatus = 'error';
+      row.captureError = e.message;
+      window.save && window.save(); window.render && window.render();
+    }
+  }
+
+  async function getWeightReading() {
+    var src = weightSourcePref;
+    if (src === 'serial') return await readFromSerialFresh(2000);
+    if (src === 'ble')    return await readFromBleFresh(2000);
+    if (src === 'ocr')    return await ocrWeightFromFrame();
+
+    var v = await readFromSerialFresh(1500); if (v) return v;
+    v = await readFromBleFresh(1500); if (v) return v;
+    return await ocrWeightFromFrame();
+  }
+  async function readFromSerialFresh(timeoutMs) {
+    if (!serialPort) return null;
+    var start = Date.now();
+    var lastAt = lastSerialSample && lastSerialSample.at;
+    while (Date.now() - start < timeoutMs) {
+      await new Promise(function(r){ setTimeout(r, 50); });
+      if (lastSerialSample && lastSerialSample.at !== lastAt) return lastSerialSample;
+    }
+    return lastSerialSample || null;
+  }
+  async function readFromBleFresh(timeoutMs) {
+    if (!bleChar) return null;
+    var start = Date.now();
+    var lastAt = lastBleSample && lastBleSample.at;
+    while (Date.now() - start < timeoutMs) {
+      await new Promise(function(r){ setTimeout(r, 50); });
+      if (lastBleSample && lastBleSample.at !== lastAt) return lastBleSample;
+    }
+    return lastBleSample || null;
+  }
+
+  // --- Header upgrade & row augmentation after render ---
+  function upgradeTableHeader(){
+    var theadRow = document.querySelector('#logBody')?.parentElement?.querySelector('thead tr');
+    if (!theadRow) return;
+    if (theadRow.querySelector('th[data-col="weight"]')) return; // already added
+    var ths = Array.from(theadRow.children);
+    // Insert before Notes header (assume it's the second last before Actions)
+    var notesIdx = ths.findIndex(function(th){ return /Notes/i.test(th.textContent||''); });
+    if (notesIdx === -1) { notesIdx = Math.max(0, ths.length-2); }
+    function mkTh(txt, data){ var th=document.createElement('th'); th.textContent=txt; th.setAttribute('data-col', data); return th; }
+    theadRow.insertBefore(mkTh('Weight','weight'), theadRow.children[notesIdx]);
+    theadRow.insertBefore(mkTh('Measured At','measuredAt'), theadRow.children[notesIdx+1]);
+    theadRow.insertBefore(mkTh('Photo','photo'), theadRow.children[notesIdx+2]);
+  }
+
+  function formatWeight(r){
+    if (r.weight == null) return '';
+    var u = r.weightUnit ? (' ' + r.weightUnit) : '';
+    var src = r.weightSource ? (' (' + r.weightSource + ')') : '';
+    var span = document.createElement('span');
+    span.innerHTML = String(r.weight) + u + (src? ' <span class="muted">'+src+'</span>':'');
+    return span;
+  }
+
+  function augmentRows(){
+    var tbody = document.getElementById('logBody');
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    for (var i=0;i<rows.length;i++){
+      var tr = rows[i];
+      if (!tr.dataset || !tr.dataset.id) continue;
+      var r = (window.data||[]).find(function(x){ return x.id===tr.dataset.id; });
+      if (!r) continue;
+
+      var cells = tr.children;
+      // If our cells already exist, update them
+      var wCell = tr.querySelector('td[data-col="weight"]');
+      var mCell = tr.querySelector('td[data-col="measuredAt"]');
+      var pCell = tr.querySelector('td[data-col="photo"]');
+      if (!wCell || !mCell || !pCell){
+        // Insert before Notes cell (assume notes is second last)
+        var insertIdx = Math.max(0, cells.length - 2);
+        function mkTd(dataCol){ var td=document.createElement('td'); td.setAttribute('data-col', dataCol); return td; }
+        pCell = mkTd('photo');
+        mCell = mkTd('measuredAt');
+        wCell = mkTd('weight');
+        tr.insertBefore(wCell, tr.children[insertIdx]);
+        tr.insertBefore(mCell, tr.children[insertIdx+1]);
+        tr.insertBefore(pCell, tr.children[insertIdx+2]);
+      }
+      // Update contents
+      wCell.innerHTML = '';
+      var wEl = formatWeight(r);
+      if (wEl) wCell.appendChild(wEl);
+
+      mCell.textContent = r.measuredAt ? (new Date(r.measuredAt)).toLocaleString() : '';
+      pCell.innerHTML = '';
+      if (r.photo){
+        var a = document.createElement('a'); a.href=r.photo; a.target='_blank'; a.rel='noopener';
+        var img = document.createElement('img'); img.src=r.photo; img.alt='Photo'; img.style.width='64px'; img.style.height='64px'; img.style.objectFit='cover'; img.style.borderRadius='8px'; img.style.border='1px solid var(--border)';
+        a.appendChild(img); pCell.appendChild(a);
+      }
+    }
+  }
+
+  // Wrap render to upgrade header and augment rows
+  if (typeof window.render === 'function'){
+    var _render = window.render;
+    window.render = function(){ _render(); try{ upgradeTableHeader(); augmentRows(); }catch(e){} };
+  }
+
+  // Wrap upsert to schedule capture
+  if (typeof window.upsert === 'function'){
+    var _upsert = window.upsert;
+    window.upsert = function(content, format, source){
+      _upsert(content, format, source);
+      try {
+        // find latest row matching content
+        var row = (window.data||[]).find(function(r){ return r && r.content === content; });
+        if (row){
+          // init new fields if absent
+          if (!('weight' in row)) { row.weight=null; row.weightUnit=null; row.weightSource=null; row.measuredAt=null; row.photo=null; row.captureStatus=null; row.capturePlannedAt=null; }
+          var doCapture = (!row.measuredAt) || (document.getElementById('captureOnRepeat') && document.getElementById('captureOnRepeat').checked);
+          if (doCapture) scheduleWeightAndPhoto(row.id);
+        }
+      } catch(e){}
+    };
+  }
+
+  // Wrap wireDC to add capture messaging
+  if (typeof window.wireDC === 'function'){
+    var _wireDC = window.wireDC;
+    window.wireDC = function(ch){
+      _wireDC(ch);
+      var origOnMessage = ch.onmessage;
+      ch.onmessage = async function(ev){
+        try {
+          var msg = JSON.parse(ev.data||'{}');
+          if (msg.type === 'capture-request' && window.role === 'camera'){
+            var wait = Math.max(0, (msg.captureAt||Date.now()) - Date.now());
+            setTimeout(async function(){
+              var photo=null, reading=null;
+              try { photo = snapshotFrame().toDataURL('image/jpeg', 0.85); } catch(e){}
+              try { reading = await ocrWeightFromFrame(); } catch(e){}
+              if (window.dc && window.dc.readyState === 'open'){
+                window.dc.send(JSON.stringify({ type:'capture-result', rowId: msg.rowId, photo: photo, reading: reading }));
+              }
+            }, wait);
+            return;
+          } else if (msg.type === 'capture-result' && window.role === 'host'){
+            var row = (window.data||[]).find(function(r){ return r && r.id === msg.rowId; });
+            if (row){
+              if (msg.photo && !row.photo) row.photo = msg.photo;
+              if (msg.reading && (row.weight == null)){
+                row.weight = msg.reading.value;
+                row.weightUnit = msg.reading.unit || row.weightUnit || null;
+                row.weightSource = 'ocr-remote';
+                row.measuredAt = row.measuredAt || new Date().toISOString();
+              }
+              window.save && window.save(); window.render && window.render();
+            }
+            return;
+          }
+        } catch(e){}
+        if (typeof origOnMessage === 'function') return origOnMessage.call(this, ev);
+      };
+    };
+  }
+
+})();
+// === /Weight & Photo Capture Extensions ===
+</script>
 </body>
 </html>
