@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR Logger — v5.3.4 (Fixes & polish)</title>
+  <title>QR Logger — v5.3.5 (Start camera fix)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -42,7 +42,7 @@
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR Logger</h1>
-        <div class="subtitle">v5.3.4 — Fixes: parser-safe ZIP/CSV, regex, no optional-chaining, button types</div>
+        <div class="subtitle">v5.3.5 — Start camera fix, OCR toggle polish</div>
       </div>
       <div style="display:flex;gap:8px;min-width:320px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
@@ -184,7 +184,34 @@
 
     async function requestPermission(){ try{ setStatus('Requesting camera permission…'); const s=await navigator.mediaDevices.getUserMedia({video:decideFacing(),audio:false}); s.getTracks().forEach(t=>t.stop()); setStatus('Permission granted.'); }catch(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); showAndroidBanner(); } await updatePerm(); if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ await enumerateCams(); } }
 
-    async function startFromSelection(){ let errors=[]; async function attempt(v){ try{ stop(); setStatus('Starting camera…'); const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080},focusMode:'continuous',advanced:[{focusMode:'continuous'}],...v},audio:false}); stream=s; videoElOn(); return true; }catch(e){ errors.append if exists; errors.append? pass; } } const id=cameraSelect.value; let ok=false; try { if(id) ok = await attempt({deviceId:{exact:id}}); } catch(e){} if(!ok) ok = await attempt(decideFacing()); if(!ok){ const opp=prefFacing.value==='user'?{facingMode:{ideal:'environment'}}:{facingMode:{ideal:'user'}}; ok = await attempt(opp); } if(!ok) ok = await attempt(true); if(ok) return true; setStatus('Failed to start camera.'); showAndroidBanner(); return false; }
+    async function startFromSelection(){
+      let errors = [];
+      async function attempt(v){
+        try {
+          stop();
+          setStatus('Starting camera…');
+          const s = await navigator.mediaDevices.getUserMedia({
+            video:{ width:{ideal:1920}, height:{ideal:1080}, focusMode:'continuous', advanced:[{focusMode:'continuous'}], ...v },
+            audio:false
+          });
+          stream = s;
+          videoElOn();
+          return true;
+        } catch(e) {
+          errors.push(e.name + ': ' + e.message);
+          return false;
+        }
+      }
+      const id = cameraSelect.value;
+      if (id && await attempt({deviceId:{exact:id}})) return true;
+      if (await attempt(decideFacing())) return true;
+      const opp = (prefFacing.value==='user') ? {facingMode:{ideal:'environment'}} : {facingMode:{ideal:'user'}};
+      if (await attempt(opp)) return true;
+      if (await attempt(true)) return true;
+      setStatus('Failed to start camera. ' + errors.join(' | '));
+      showAndroidBanner();
+      return false;
+    }
 
     function getTrack(){ if(!stream) return null; const tracks=stream.getVideoTracks(); return tracks && tracks[0] ? tracks[0] : null; }
 
@@ -224,7 +251,35 @@
 
     if(scaleModeSel){ scaleModeSel.addEventListener('change', ()=>{ scaleMode = scaleModeSel.value; }); }
     if(delayInput){ delayInput.addEventListener('change', ()=>{ const v=parseFloat(delayInput.value); delaySec = Math.max(0, Math.min(4, isNaN(v)?2:v)); delayInput.value = String(delaySec); }); }
-    if(ocrToggleBtn && overlay){ ocrToggleBtn.addEventListener('click', ()=>{ ocrBoxEnabled = !ocrBoxEnabled; overlay.style.pointerEvents = ocrBoxEnabled ? 'auto' : 'none'; drawOCRBox(); }); overlay.addEventListener('mousedown', (e)=>{ if(!ocrBoxEnabled) return; const r=overlay.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top; const bx=ocrBox.x*overlay.width, by=ocrBox.y*overlay.height, bw=ocrBox.w*overlay.width, bh=ocrBox.h*overlay.height; if(x>bx && x<bx+bw && y>by && y<by+bh){ isDragging=true; dragOffset.x=x-bx; dragOffset.y=y-by; } }); window.addEventListener('mousemove', (e)=>{ if(!isDragging) return; const r=overlay.getBoundingClientRect(); let x=e.clientX-r.left-dragOffset.x; let y=e.clientY-r.top-dragOffset.y; x=Math.max(0,Math.min(x, overlay.width-ocrBox.w*overlay.width)); y=Math.max(0,Math.min(y, overlay.height-ocrBox.h*overlay.height)); ocrBox.x = x/overlay.width; ocrBox.y = y/overlay.height; drawOCRBox(); }); window.addEventListener('mouseup', ()=>{ isDragging=false; }); }
+    if(ocrToggleBtn && overlay){
+      ocrToggleBtn.addEventListener('click', ()=>{
+        ocrBoxEnabled = !ocrBoxEnabled;
+        window.ocrBoxEnabledGlobal = ocrBoxEnabled; // keep global flag in sync for drawOCRBox
+        overlay.style.pointerEvents = ocrBoxEnabled ? 'auto' : 'none';
+        drawOCRBox();
+      });
+      overlay.addEventListener('mousedown', (e)=>{
+        if(!ocrBoxEnabled) return;
+        const r=overlay.getBoundingClientRect();
+        const x=e.clientX-r.left, y=e.clientY-r.top;
+        const bx=ocrBox.x*overlay.width, by=ocrBox.y*overlay.height, bw=ocrBox.w*overlay.width, bh=ocrBox.h*overlay.height;
+        if(x>bx && x<bx+bw && y>by && y<by+bh){
+          isDragging=true; dragOffset.x=x-bx; dragOffset.y=y-by;
+        }
+      });
+      window.addEventListener('mousemove', (e)=>{
+        if(!isDragging) return;
+        const r=overlay.getBoundingClientRect();
+        let x=e.clientX-r.left-dragOffset.x;
+        let y=e.clientY-r.top-dragOffset.y;
+        x=Math.max(0,Math.min(x, overlay.width-ocrBox.w*overlay.width));
+        y=Math.max(0,Math.min(y, overlay.height-ocrBox.h*overlay.height));
+        ocrBox.x = x/overlay.width; ocrBox.y = y/overlay.height;
+        window.ocrBox = ocrBox;
+        drawOCRBox();
+      });
+      window.addEventListener('mouseup', ()=>{ isDragging=false; });
+    }
     if(connectHIDBtn){ connectHIDBtn.addEventListener('click', connectHID); }
     if(connectBLEBtn){ connectBLEBtn.addEventListener('click', connectBLE); }
 

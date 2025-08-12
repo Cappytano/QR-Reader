@@ -1,23 +1,10 @@
-# QR-Reader / QR Logger — v5.3.4
+# QR-Reader / QR Logger — v5.3.5
 
-**Comprehensive fix release**: removes optional-chaining edge cases, fixes filename regex hyphen, corrects CSV/ZIP newlines,
-adds button `type="button"`, and keeps CSS vendor order (`-webkit-backdrop-filter` first).
+Fixes:
+- Clean `startFromSelection()` catch block to avoid parser errors on page load.
+- OCR Toggle now syncs a global flag so the green ROI box reliably renders.
 
-Features included:
-- QR scanning (BarcodeDetector → jsQR fallback)
-- Adjustable delayed capture → weight + photo
-- Weight via OCR (Tesseract), USB/HID scales (WebHID), BLE Weight Scale / UART (WebBluetooth)
-- Table with Date/Time/Weight/Photo, editable notes, duplicate consolidation
-- Export: CSV, Excel (.xlsx), **ZIP (CSV + photos)**, Import CSV/XLSX
-- PWA: manifest, icons, service worker (cache `qr-logger-v5-3-4`), offline-ready
+Includes all features from 5.3.4 (QR scan, delayed weight+photo, OCR/HID/BLE scales, imports/exports, PWA, localhost).
 
-## Deploy to GitHub Pages
-Upload the contents to your repo **root** → commit → wait ~1 min → Shift+Reload.
-If you installed the PWA before, uninstall once so the new SW is picked up.
-
-## Windows localhost
-```
-npm i
-node server.js
-```
-App at: http://localhost:8080/
+## Deploy
+Upload to repo **root**, commit, wait ~1 min, then Shift+Reload. If previously installed as PWA, uninstall/reinstall once.
