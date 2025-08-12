@@ -1,4 +1,4 @@
-// Remote camera support (v6.0.2) using Firebase (Firestore) as signaling.
+// Remote camera support (v6.1.1) — same WebRTC pairing module as before
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js';
@@ -57,6 +57,8 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc } fro
       });
     });
 
+    const rs = document.getElementById('remoteStatus');
+    if(rs){ rs.textContent='Session code: '+code+'. Waiting for camera…'; }
     return { code: code };
   }
 
@@ -71,7 +73,7 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc } fro
     const data = sessSnap.data();
     if(!data.offer){ throw new Error('Host not ready'); }
 
-    const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width:{ideal:1280}, height:{ideal:720} }, audio:false });
+    const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width:{ideal:1920}, height:{ideal:1080} }, audio:false });
     s.getTracks().forEach(function(t){ pc.addTrack(t, s); });
 
     await pc.setRemoteDescription(data.offer);
@@ -91,22 +93,19 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc } fro
       });
     });
 
+    const rs = document.getElementById('remoteStatus');
+    if(rs){ rs.textContent='Joined. Streaming to host…'; }
     state.join.status='connected'; return true;
   }
 
-  function getRemoteStream(){ return state.remoteStream; }
-  function getHostState(){ return state.host.status; }
-  function getJoinState(){ return state.join.status; }
-
-  // wire buttons here (so app.js stays simpler)
   document.addEventListener('DOMContentLoaded', function(){
     var hostBtn=document.getElementById('remoteHostBtn');
     var joinBtn=document.getElementById('remoteJoinBtn');
     var codeInput=document.getElementById('remoteCodeInput');
     var remoteStatus=document.getElementById('remoteStatus');
-    if(hostBtn){ hostBtn.addEventListener('click', function(){ createHost().then(function(info){ remoteStatus.textContent='Session code: '+info.code+'. Waiting for camera…'; }).catch(function(err){ remoteStatus.textContent='Host error: '+(err.message||err); }); }); }
-    if(joinBtn){ joinBtn.addEventListener('click', function(){ var code=(codeInput && codeInput.value)? codeInput.value.trim() : ''; if(!code){ remoteStatus.textContent='Enter a valid code.'; return; } joinAsCamera(code).then(function(){ remoteStatus.textContent='Joined. Streaming to host…'; }).catch(function(err){ remoteStatus.textContent='Join error: '+(err.message||err); }); }); }
+    if(hostBtn){ hostBtn.addEventListener('click', function(){ createHost().catch(function(err){ remoteStatus.textContent='Host error: '+(err.message||err); }); }); }
+    if(joinBtn){ joinBtn.addEventListener('click', function(){ var code=(codeInput && codeInput.value)? codeInput.value.trim() : ''; if(!code){ remoteStatus.textContent='Enter a valid code.'; return; } joinAsCamera(code).catch(function(err){ remoteStatus.textContent='Join error: '+(err.message||err); }); }); }
   });
 
-  window.QRRemote = { createHost, joinAsCamera, getRemoteStream, getHostState, getJoinState };
+  window.QRRemote = { createHost, joinAsCamera };
 })();

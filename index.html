@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR Logger — v6.0.2 (Cooldown + Enhanced Decoder)</title>
+  <title>QR Logger — v6.1.1 (Local libs + Multi‑format)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -40,38 +40,22 @@
     .row label{font-size:12px;color:var(--muted)}
     .row .tight{max-width:160px}
   </style>
-  <script>
-  // Robust CDN loader + Enhanced decoder (qr-scanner)
-  window.libsReady = (async function(){
-    function loadScript(url){ return new Promise(function(res, rej){ var s=document.createElement('script'); s.src=url; s.async=true; s.onload=function(){res(true)}; s.onerror=function(){rej(new Error('load fail '+url))}; document.head.appendChild(s); }); }
-    async function tryMany(list){ for(let i=0;i<list.length;i++){ try{ await loadScript(list[i]); return list[i]; }catch(e){} } return null; }
-    const sources = {
-      jszip: ['https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js','https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js','https://unpkg.com/jszip@3.10.1/dist/jszip.min.js'],
-      jsqr:  ['https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js','https://unpkg.com/jsqr@1.4.0/dist/jsQR.js'],
-      xlsx:  ['https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js','https://unpkg.com/xlsx@0.19.3/dist/xlsx.full.min.js'],
-      qrscanner: ['https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js','https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js']
-    };
-    const r = {};
-    r.jszip = await tryMany(sources.jszip);
-    r.jsqr = await tryMany(sources.jsqr);
-    r.xlsx = await tryMany(sources.xlsx);
-    r.qrscanner = await tryMany(sources.qrscanner);
-    if (window.QrScanner && r.qrscanner){
-      // set worker path matching the origin we loaded from
-      var base = r.qrscanner.replace(/qr-scanner\.min\.js.*$/,'');
-      window.QrScanner.WORKER_PATH = base + 'qr-scanner-worker.min.js';
-    }
-    window.__libs = r;
-    return r;
-  })();
-  </script>
+
+  <!-- Local vendor first (no CDN). If a file is missing, the app still runs with BarcodeDetector only. -->
+  <script src="vendor/jszip.min.js"></script>
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="vendor/jsQR.js"></script>
+  <script src="vendor/zxing.min.js"></script>
+  <script src="vendor/zxing-browser.min.js"></script>
+  <script src="vendor/tesseract.min.js"></script>
+
 </head>
 <body>
   <header>
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR Logger</h1>
-        <div class="subtitle">v6.0.2 — Post‑scan cooldown + enhanced decoder (optional) + Edge performance</div>
+        <div class="subtitle">v6.1.1 — Local libs + Multi‑format (UPC/EAN/Code39/128/ITF/DataMatrix/PDF417/Aztec…)</div>
       </div>
       <div style="display:flex;gap:8px;min-width:320px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
@@ -90,12 +74,17 @@
           <label class="sr-only" for="cameraSource">Camera source</label>
           <select id="cameraSource" title="Camera source" class="tight">
             <option value="local" selected>Local camera</option>
-            <option value="remote">Remote camera (pair code)</option>
+            <option value="remote">Remote camera (WebRTC)</option>
           </select>
 
           <button id="remoteHostBtn" type="button" class="secondary">Create Session</button>
           <input id="remoteCodeInput" class="tight" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Enter code to join" title="Pairing code"/>
           <button id="remoteJoinBtn" type="button" class="secondary">Join</button>
+        </div>
+
+        <div class="controls row" style="margin-bottom:8px">
+          <button id="connectSerial" type="button" class="secondary" title="Connect phone via Bluetooth/Serial (Windows COM port)">Connect Phone (Bluetooth/Serial)</button>
+          <span id="serialState" class="muted"></span>
         </div>
 
         <div class="video-wrap">
@@ -105,7 +94,7 @@
           <div class="frame" aria-hidden="true"></div>
         </div>
 
-        <div class="controls" style="margin-top:12px">
+        <div class="controls row" style="margin-top:12px">
           <button id="permBtn" type="button" class="secondary">Request Permission</button>
           <button id="startBtn" type="button" class="primary">Start Camera</button>
           <button id="stopBtn" type="button" class="secondary">Stop</button>
@@ -114,7 +103,7 @@
         <div class="controls row" style="margin-top:8px">
           <label class="sr-only" for="cameraSelect">Camera</label>
           <select id="cameraSelect" title="Camera" aria-label="Camera device list" class="tight"></select>
-          <button id="refreshBtn" type="button" class="secondary" title="Refresh camera list">Refresh</button>
+          <button id="refreshBtn" type="button" class="secondary" title="Refresh">Refresh</button>
           <label class="sr-only" for="prefFacing">Preferred camera</label>
           <select id="prefFacing" title="Preferred camera" aria-label="Preferred camera" class="tight">
             <option value="environment">Prefer Back</option>
@@ -149,7 +138,8 @@
           <label for="cooldownSec">Post‑scan pause (s)</label>
           <input id="cooldownSec" class="tight" type="number" min="0" max="10" step="0.5" value="5"/>
           <label><input id="ignoreDup" type="checkbox" checked/> Ignore duplicates during pause</label>
-          <label title="Uses qr-scanner (WASM) after jsQR for tougher codes"><input id="enhancedDecoder" type="checkbox"/> Enhanced decoder</label>
+          <label title="Try ZXing Multi‑format after BD/jsQR"><input id="enhancedDecoder" type="checkbox"/> Enhanced decoder</label>
+          <label title="Prefer ZXing for more symbologies"><input id="preferZXing" type="checkbox"/> Prefer multi‑format</label>
         </div>
 
         <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -171,7 +161,7 @@
         <div class="card" style="max-height:55vh;overflow:auto">
           <table id="logTable">
             <thead><tr>
-              <th>#</th><th>QR Content</th><th>Format</th><th>Source</th><th>Date</th><th>Time</th><th>Weight</th><th>Photo</th><th>Count</th><th>Notes (editable)</th><th>Actions</th>
+              <th>#</th><th>Content</th><th>Format</th><th>Source</th><th>Date</th><th>Time</th><th>Weight</th><th>Photo</th><th>Count</th><th>Notes</th><th>Actions</th>
             </tr></thead>
             <tbody id="logBody"></tbody>
           </table>
@@ -180,9 +170,7 @@
     </div>
   </main>
 
-  <!-- Core app -->
   <script src="app.js"></script>
-  <!-- Remote camera (module) -->
   <script type="module" src="remote.js"></script>
 </body>
 </html>
