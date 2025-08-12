@@ -1,8 +1,8 @@
 {
   "name": "qr-logger",
-  "version": "6.0.0",
+  "version": "6.0.2",
   "private": true,
-  "description": "QR Logger (PWA) with Remote Camera (WebRTC), delayed weight capture + photo",
+  "description": "QR Logger (PWA) with Remote Camera (WebRTC), cooldown & enhanced decoder, delayed weight capture + photo",
   "scripts": {
     "start": "node server.js"
   },

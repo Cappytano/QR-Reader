@@ -1,5 +1,7 @@
-// Core app for QR Logger (v6.0.0)
-(function(){
+// Core app for QR Logger (v6.0.2) — Cooldown, duplicate guard, enhanced decoder
+(async function(){
+  await (window.libsReady || Promise.resolve());
+
   const $ = s => document.querySelector(s);
   const video = $('#video');
   const canvas = $('#canvas');
@@ -25,12 +27,21 @@
   const joinBtn = $('#remoteJoinBtn');
   const codeInput = $('#remoteCodeInput');
 
-  let stream = null, scanning = false, detector = null, usingBarcodeDetector=false, scanRAF=0;
+  const cooldownInput = $('#cooldownSec');
+  const ignoreDupChk = $('#ignoreDup');
+  const enhancedChk = $('#enhancedDecoder');
+
+  let stream = null, scanning = false, detector = null, usingBarcodeDetector=false;
   let data = []; const STORAGE_KEY='qrLoggerV1';
 
   // scale & OCR state
   let scaleMode='none', delaySec=2;
   let ocrBox={x:0.6,y:0.65,w:0.35,h:0.25}, ocrBoxEnabled=false, isDragging=false, dragOffset={x:0,y:0};
+
+  // cooldown & dup guard
+  let cooldownSec=5; let cooldownUntil=0;
+  let ignoreDup=true; let lastContent=''; let lastAt=0;
+  let enhanced=false; let zxingBusy=false; let lastZxingTry=0;
 
   const isAndroid=/Android/i.test(navigator.userAgent);
   const isInApp=/FBAN|FBAV|Instagram|Line\/|WeChat|Twitter|Snapchat|DuckDuckGo/i.test(navigator.userAgent);
@@ -105,13 +116,97 @@
 
   async function tryApplyDefaults(){ try{ const t=getTrack(); if(!t) return; const caps=t.getCapabilities ? t.getCapabilities() : {}; const cons={advanced:[]}; if(caps.focusMode && caps.focusMode.indexOf('continuous')>-1) cons.advanced.push({focusMode:'continuous'}); if(caps.exposureMode && caps.exposureMode.indexOf('continuous')>-1) cons.advanced.push({exposureMode:'continuous'}); if(cons.advanced.length) await t.applyConstraints(cons); }catch(e){} }
 
-  function stop(){ cancelAnimationFrame(scanRAF); scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } if(octx){ octx.clearRect(0,0,overlay.width,overlay.height); } }
+  function stop(){ scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } if(octx){ octx.clearRect(0,0,overlay.width,overlay.height); } }
 
-  async function initScanner(){ usingBarcodeDetector = ('BarcodeDetector' in window); if(usingBarcodeDetector){ try{ detector=new BarcodeDetector({formats:['qr_code','aztec','data_matrix','pdf417']}); scanEnginePill.textContent='Engine: BarcodeDetector'; scanning=true; return scanLoopDetector(); }catch(e){ usingBarcodeDetector=false; } } scanEnginePill.textContent='Engine: jsQR'; scanning=true; scanLoopJsQR(); }
+  // ---- Scanning with cooldown / duplicate guard ----
+  let bdFailCount=0, scanTimer=null;
+  function initScanner(){
+    clearTimeout(scanTimer); bdFailCount=0;
+    usingBarcodeDetector = ('BarcodeDetector' in window);
+    if(usingBarcodeDetector){
+      try{
+        detector=new BarcodeDetector({formats:['qr_code','aztec','data_matrix','pdf417']});
+        scanEnginePill.textContent='Engine: BarcodeDetector';
+        scanning=true; loopDetector();
+        return;
+      }catch(e){ usingBarcodeDetector=false; }
+    }
+    scanEnginePill.textContent='Engine: jsQR';
+    scanning=true; loopJsQR();
+  }
 
-  async function scanLoopDetector(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopDetector); return; } try{ let det=null; try{ det=await detector.detect(video); }catch(e){ try{ const bmp=await createImageBitmap(video); det=await detector.detect(bmp); }catch(e2){} } if(det && det.length){ const c=det[0]; const text=c.rawValue || ''; upsert(text, c.format||'qr_code', cameraSourceSel.value==='remote'?'remote':'camera'); setTimeout(function(){ scanRAF=requestAnimationFrame(scanLoopDetector); }, 350); return; } }catch(e){} scanRAF=requestAnimationFrame(scanLoopDetector); }
+  function inCooldown(){
+    const now=Date.now();
+    if(now<cooldownUntil){
+      const left=Math.max(0, Math.ceil((cooldownUntil-now)/1000));
+      setStatus('In pause… scanning resumes in '+left+'s');
+      return true;
+    }
+    return false;
+  }
 
-  function scanLoopJsQR(){ if(!scanning || !video || video.readyState<2){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } const w=video.videoWidth||0, h=video.videoHeight||0; if(!w||!h){ scanRAF=requestAnimationFrame(scanLoopJsQR); return; } canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h); try{ const id=ctx.getImageData(0,0,w,h); const q=jsQR(id.data,w,h,{inversionAttempts:'attemptBoth'}); if(q && q.data){ upsert(q.data,'qr_code',cameraSourceSel.value==='remote'?'remote':'camera'); setTimeout(function(){ scanRAF=requestAnimationFrame(scanLoopJsQR); }, 350); return; } }catch(e){} scanRAF=requestAnimationFrame(scanLoopJsQR); }
+  function handleDetection(text, format, source){
+    const now=Date.now();
+    if(ignoreDup && lastContent===text && (now-lastAt)<cooldownSec*1000){
+      cooldownUntil = now + cooldownSec*1000; // extend pause
+      return; // omit duplicate
+    }
+    lastContent=text; lastAt=now;
+    cooldownUntil = now + cooldownSec*1000;
+    upsert(text, format||'qr_code', source);
+  }
+
+  function loopDetector(){
+    if(!scanning || !video || video.readyState<2){ scanTimer=setTimeout(loopDetector, 120); return; }
+    if(inCooldown()){ scanTimer=setTimeout(loopDetector, 300); return; }
+    (async function(){
+      try{
+        let det=null;
+        try{ det=await detector.detect(video); }
+        catch(e){ try{ const bmp=await createImageBitmap(video); det=await detector.detect(bmp); }catch(e2){} }
+        if(det && det.length){
+          const c=det[0]; const text=c.rawValue || '';
+          if(text){ handleDetection(text, c.format||'qr_code', (cameraSourceSel.value==='remote'?'remote':'camera')); bdFailCount=0; setTimeout(loopDetector, 200); return; }
+        }
+        bdFailCount++; if(bdFailCount>15){ usingBarcodeDetector=false; scanEnginePill.textContent='Engine: jsQR (fallback)'; loopJsQR(); return; }
+      }catch(e){ bdFailCount++; }
+      scanTimer=setTimeout(loopDetector, 120);
+    })();
+  }
+
+  const sampleCanvas=document.createElement('canvas');
+  const sctx=sampleCanvas.getContext('2d', { willReadFrequently:true });
+  function loopJsQR(){
+    if(!scanning || !video || video.readyState<2){ scanTimer=setTimeout(loopJsQR, 180); return; }
+    if(inCooldown()){ scanTimer=setTimeout(loopJsQR, 300); return; }
+    const vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh){ scanTimer=setTimeout(loopJsQR, 180); return; }
+    const MAXW=640; const scale = vw>MAXW ? (MAXW/vw) : 1;
+    const sw=Math.max(1, Math.floor(vw*scale)), sh=Math.max(1, Math.floor(vh*scale));
+    sampleCanvas.width=sw; sampleCanvas.height=sh;
+    sctx.imageSmoothingEnabled=false;
+    sctx.drawImage(video, 0, 0, sw, sh);
+    try{
+      const id=sctx.getImageData(0,0,sw,sh);
+      const q= window.jsQR ? jsQR(id.data, sw, sh, { inversionAttempts:'attemptBoth' }) : null;
+      if(q && q.data){
+        handleDetection(q.data,'qr_code', (cameraSourceSel.value==='remote'?'remote':'camera'));
+        scanTimer=setTimeout(loopJsQR, 220); return;
+      }
+    }catch(e){}
+
+    // Enhanced decoder (qr-scanner) — attempt after jsQR miss
+    if(enhanced && window.QrScanner && !zxingBusy){
+      const now=Date.now();
+      if(now - lastZxingTry > 280){ // rate limit
+        zxingBusy=true; lastZxingTry=now;
+        window.QrScanner.scanImage(sampleCanvas, { returnDetailedScanResult:true }).then(function(res){
+          if(res && res.data){ handleDetection(res.data,'qr_code', (cameraSourceSel.value==='remote'?'remote':'camera')); }
+        }).catch(function(){ /* no result */ }).finally(function(){ zxingBusy=false; });
+      }
+    }
+
+    scanTimer=setTimeout(loopJsQR, 160);
+  }
 
   const tbody=$('#logBody');
   function render(){
@@ -158,6 +253,19 @@
   });
   if(manualInput){ manualInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); const v=manualInput.value.trim(); if(v){ upsert(v,'text','manual/keyboard'); manualInput.value=''; } } }); }
 
+  function ensureXLSX(){
+    if(window.XLSX) return true;
+    setStatus('Excel library not loaded; trying fallback…');
+    const fallback = ['https://unpkg.com/xlsx@0.19.3/dist/xlsx.full.min.js','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js'];
+    var p = Promise.resolve();
+    for(var i=0;i<fallback.length;i++){
+      (function(u){
+        p = p.then(function(){ return new Promise(function(res){ var s=document.createElement('script'); s.src=u; s.onload=function(){res(true)}; s.onerror=function(){res(true)}; document.head.appendChild(s); }); });
+      })(fallback[i]);
+    }
+    return false;
+  }
+
   $('#exportCsv').addEventListener('click', function(){
     const headers=["QR Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"];
     const rows=[headers].concat(data.map(function(r){ return [r.content,r.format,r.source,r.date||'',r.time||'',r.weight||'',r.photo||'',r.count,r.notes||'',r.timestamp||'']; }));
@@ -166,10 +274,13 @@
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='qr-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.csv'; a.click(); URL.revokeObjectURL(a.href);
   });
   $('#exportXlsx').addEventListener('click', function(){
+    if(!window.XLSX){ if(!ensureXLSX()){ return; } }
+    if(!window.XLSX){ setStatus('Excel export unavailable; use CSV.'); return; }
     const rows=data.map(function(r){ return {"QR Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||'',"Time":r.time||'',"Weight":r.weight||'',"Photo":r.photo||'',"Count":r.count,"Notes":r.notes||'',"Timestamp":r.timestamp||''}; });
     const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'QR Log'); XLSX.writeFile(wb,'qr-log-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.xlsx');
   });
   $('#exportZip').addEventListener('click', async function(){
+    if(!window.JSZip){ setStatus('Zip library missing (network blocked?)'); return; }
     try{
       const zip=new JSZip();
       const headers=["QR Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"];
@@ -220,6 +331,8 @@
         const last=data[0]; last.date=cols[3]||last.date; last.time=cols[4]||last.time; last.weight=cols[5]||''; last.photo=cols[6]||''; last.count=parseInt(cols[7]||'1',10); last.notes=(cols[8]||'').replace(/^\"|\"$/g,''); last.timestamp=cols[9]||last.timestamp;
       }
     } else {
+      if(!window.XLSX){ if(!ensureXLSX()){ return; } }
+      if(!window.XLSX){ setStatus('Excel import unavailable; use CSV.'); return; }
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; const rows2=XLSX.utils.sheet_to_json(ws);
       for(var j=0;j<rows2.length;j++){
@@ -234,6 +347,11 @@
 
   if(scaleModeSel){ scaleModeSel.addEventListener('change', function(){ scaleMode = scaleModeSel.value; }); }
   if(delayInput){ delayInput.addEventListener('change', function(){ const v=parseFloat(delayInput.value); delaySec = Math.max(0, Math.min(4, isNaN(v)?2:v)); delayInput.value = String(delaySec); }); }
+
+  if(cooldownInput){ cooldownInput.addEventListener('change', function(){ const v=parseFloat(cooldownInput.value); cooldownSec = Math.max(0, Math.min(10, isNaN(v)?5:v)); cooldownInput.value = String(cooldownSec); }); }
+  if(ignoreDupChk){ ignoreDupChk.addEventListener('change', function(){ ignoreDup = !!ignoreDupChk.checked; }); }
+  if(enhancedChk){ enhancedChk.addEventListener('change', function(){ enhanced = !!enhancedChk.checked; setStatus(enhanced? 'Enhanced decoder enabled' : 'Enhanced decoder disabled'); }); }
+
   if(ocrToggleBtn && overlay){
     ocrToggleBtn.addEventListener('click', function(){
       ocrBoxEnabled = !ocrBoxEnabled;
@@ -267,20 +385,9 @@
   $('#refreshBtn').addEventListener('click', enumerateCams);
   cameraSelect.addEventListener('change', startFromSelection);
 
-  hostBtn.addEventListener('click', function(){
-    if(!window.QRRemote || !window.QRRemote.createHost){ setRemoteStatus('Remote module disabled. Set pairing-config.js.'); return; }
-    window.QRRemote.createHost().then(function(info){
-      setRemoteStatus('Session code: '+info.code+'. Waiting for camera to join…');
-    }).catch(function(err){ setRemoteStatus('Host error: '+(err.message||err)); });
-  });
-  joinBtn.addEventListener('click', function(){
-    if(!window.QRRemote || !window.QRRemote.joinAsCamera){ setRemoteStatus('Remote module disabled. Set pairing-config.js.'); return; }
-    const code=(codeInput && codeInput.value)? codeInput.value.trim() : '';
-    if(!code){ setRemoteStatus('Enter a valid code.'); return; }
-    window.QRRemote.joinAsCamera(code).then(function(){ setRemoteStatus('Joined. Streaming to host…'); }).catch(function(err){ setRemoteStatus('Join error: '+(err.message||err)); });
-  });
+  // Remote buttons are wired in remote.js
 
-  load(); render(); updatePerm(); enumerateCams(); showAndroidBanner();
+  load(); render(); updatePerm(); enumerateCams();
   if(document.visibilityState==='visible') setStatus('Ready. Choose Local/Remote → Request Permission → Start Camera.');
 
   function beep(){ try{ var a=new AudioContext(), o=a.createOscillator(), g=a.createGain(); o.type='square'; o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.05,a.currentTime); o.start(); setTimeout(function(){o.stop(); a.close();},90);}catch(e){} }
