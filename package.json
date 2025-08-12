@@ -1,11 +1,10 @@
 {
-  "name": "qr-logger-webapp",
+  "name": "qr-logger",
+  "version": "5.3.1",
   "private": true,
-  "version": "3.0.0",
-  "description": "QR logger for browser with Excel/CSV export",
+  "description": "QR Logger (PWA) with delayed weight capture + photo",
   "scripts": {
-    "start": "node server.js",
-    "start:https": "node server.js --https"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2"

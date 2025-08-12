@@ -1,9 +1,5 @@
-// Optional: Fill this to enable 6-digit pairing via Firestore.
-window.FIREBASE_CONFIG = {
-  // apiKey: "",
-  // authDomain: "" ,
-  // projectId: "",
-  // storageBucket: "",
-  // messagingSenderId: "",
-  // appId: ""
+// Placeholder for future remote/pair-by-code setup (Firestore, etc.)
+window.QR_REMOTE = {
+  enabled: false,
+  // firebaseConfig: { apiKey:'', authDomain:'', projectId:'', appId:'', ... }
 };
