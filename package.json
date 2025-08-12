@@ -1,6 +1,6 @@
 {
   "name": "qr-logger",
-  "version": "5.3.2",
+  "version": "5.3.3",
   "private": true,
   "description": "QR Logger (PWA) with delayed weight capture + photo",
   "scripts": {
