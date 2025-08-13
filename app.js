@@ -153,21 +153,31 @@
     usingBarcodeDetector = ('BarcodeDetector' in window);
     if(usingBarcodeDetector){
       try{
-        let fmts = SUPPORTED_BD.slice(0);
-        if(typeof BarcodeDetector.getSupportedFormats === 'function'){
-          try{ const got = await BarcodeDetector.getSupportedFormats(); fmts = (got && got.length)? got : fmts; }catch(_e){}
+        let fmts = [];
+        if (typeof BarcodeDetector.getSupportedFormats === 'function') {
+          try { const got = await BarcodeDetector.getSupportedFormats(); fmts = Array.isArray(got) ? got : []; }
+          catch(_e){ fmts = []; }
+        } else {
+          // Conservative default for widest compatibility
+          fmts = ['qr_code'];
         }
-        detector=new BarcodeDetector({formats:fmts});
-        scanEnginePill.textContent='Engine: BarcodeDetector ('+fmts.length+' types)';
+        // Try to construct in decreasing strictness
+        try {
+          detector = fmts.length ? new BarcodeDetector({formats: fmts}) : new BarcodeDetector();
+        } catch(e1){
+          try { detector = new BarcodeDetector({formats:['qr_code']}); }
+          catch(e2){ detector = new BarcodeDetector(); }
+        }
+        const pill = (fmts && fmts.length) ? ('(' + fmts.join(', ') + ')') : '(default)';
+        scanEnginePill.textContent='Engine: BarcodeDetector ' + pill;
         scanning=true; loopDetector(); return;
-      }catch(e){ usingBarcodeDetector=false; }
+      }catch(e){ /* fall through to unsupported */ }
     }
-    // If BD not supported, show message
-    scanEnginePill.textContent='Engine: unsupported';
-    setStatus('BarcodeDetector not available in this browser. Use Chrome/Edge on Windows 11.');
+    scanEnginePill.textContent='Engine: unavailable';
+    setStatus('BarcodeDetector unavailable. Ensure HTTPS (or localhost), up-to-date Chrome/Edge, and no enterprise policy disabling Shape Detection.');
   }
 
-  function inCooldown(){ const now=Date.now(); return now<cooldownUntil; }
+    function inCooldown(){ const now=Date.now(); return now<cooldownUntil; }
   function handleDetection(text, format, source){
     const now=Date.now();
     if(ignoreDup && lastContent===text && (now-lastAt)<cooldownSec*1000){ cooldownUntil = now + cooldownSec*1000; return; }
