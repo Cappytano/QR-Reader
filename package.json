@@ -1,8 +1,8 @@
 {
   "name": "qr-logger",
-  "version": "6.1.1",
+  "version": "6.1.2",
   "private": true,
-  "description": "QR Logger with local vendor libs, multi-format scanning, and BT/Serial remote phone",
+  "description": "QR Logger (no external libs) with built-in ZIP/XLSX and BD multi-format scanning",
   "scripts": {
     "start": "node server.js"
   },

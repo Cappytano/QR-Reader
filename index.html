@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR Logger — v6.1.1 (Local libs + Multi‑format)</title>
+  <title>QR Logger — v6.1.2 (No external libs)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -32,7 +32,7 @@
     .banner{margin:12px 0;padding:10px 12px;border-radius:12px;border:1px solid #43320b;background:linear-gradient(180deg,rgba(255,170,0,.12),rgba(255,170,0,.06));color:#ffdd9a}
     table{width:100%;border-collapse:collapse}thead th{position:sticky;top:0;background:#0e172a;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:.06em;color:#93a3b8;padding:10px 8px;text-align:left}
     tbody td{border-bottom:1px solid var(--border);padding:8px;vertical-align:top;font-size:14px}
-    .note-cell[contenteditable=\"true\"]{outline:1px dashed rgba(255,255,255,.15)}.count{display:inline-flex;gap:6px;background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:2px 8px;font-size:12px}
+    .note-cell[contenteditable="true"]{outline:1px dashed rgba(255,255,255,.15)}.count{display:inline-flex;gap:6px;background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:2px 8px;font-size:12px}
     .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,1px,1px);white-space:nowrap;border:0}
     .thumb{width:64px;height:auto;border-radius:6px;border:1px solid var(--border)}
     .small{padding:6px 9px;font-size:12px}
@@ -40,22 +40,13 @@
     .row label{font-size:12px;color:var(--muted)}
     .row .tight{max-width:160px}
   </style>
-
-  <!-- Local vendor first (no CDN). If a file is missing, the app still runs with BarcodeDetector only. -->
-  <script src="vendor/jszip.min.js"></script>
-  <script src="vendor/xlsx.full.min.js"></script>
-  <script src="vendor/jsQR.js"></script>
-  <script src="vendor/zxing.min.js"></script>
-  <script src="vendor/zxing-browser.min.js"></script>
-  <script src="vendor/tesseract.min.js"></script>
-
 </head>
 <body>
   <header>
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR Logger</h1>
-        <div class="subtitle">v6.1.1 — Local libs + Multi‑format (UPC/EAN/Code39/128/ITF/DataMatrix/PDF417/Aztec…)</div>
+        <div class="subtitle">v6.1.2 — No external libs (built‑in XLSX/ZIP), multi‑format via BarcodeDetector</div>
       </div>
       <div style="display:flex;gap:8px;min-width:320px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
@@ -89,7 +80,6 @@
 
         <div class="video-wrap">
           <video id="video" playsinline webkit-playsinline muted></video>
-          <canvas id="canvas" style="display:none"></canvas>
           <canvas id="overlay" style="position:absolute;inset:0;pointer-events:none"></canvas>
           <div class="frame" aria-hidden="true"></div>
         </div>
@@ -114,7 +104,7 @@
         </div>
 
         <div class="controls row" style="margin-top:8px">
-          <label class="sr-only" for="manualInput">Manual QR entry</label>
+          <label class="sr-only" for="manualInput">Manual entry</label>
           <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
           <button id="addManualBtn" type="button">Add</button>
         </div>
@@ -138,8 +128,6 @@
           <label for="cooldownSec">Post‑scan pause (s)</label>
           <input id="cooldownSec" class="tight" type="number" min="0" max="10" step="0.5" value="5"/>
           <label><input id="ignoreDup" type="checkbox" checked/> Ignore duplicates during pause</label>
-          <label title="Try ZXing Multi‑format after BD/jsQR"><input id="enhancedDecoder" type="checkbox"/> Enhanced decoder</label>
-          <label title="Prefer ZXing for more symbologies"><input id="preferZXing" type="checkbox"/> Prefer multi‑format</label>
         </div>
 
         <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -153,9 +141,9 @@
           <button id="exportXlsx" type="button" class="primary">Export Excel (.xlsx)</button>
           <button id="exportCsv" type="button" class="secondary">Export CSV</button>
           <button id="exportZip" type="button" class="secondary">Export ZIP (CSV+Photos)</button>
-          <button id="importFileBtn" type="button" class="secondary" aria-controls="fileInput">Import</button>
+          <button id="importFileBtn" type="button" class="secondary" aria-controls="fileInput">Import (CSV)</button>
           <label for="fileInput" class="sr-only">Choose file to import</label>
-          <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" title="Choose file" aria-label="Choose file" style="display:none"/>
+          <input id="fileInput" type="file" accept=".csv" title="Choose file" aria-label="Choose file" style="display:none"/>
           <button id="clearBtn" type="button" class="secondary" title="Clear all rows">Clear</button>
         </div>
         <div class="card" style="max-height:55vh;overflow:auto">

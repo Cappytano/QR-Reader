@@ -1,34 +1,12 @@
-# QR-Reader / QR Logger — v6.1.1
+# QR-Reader / QR Logger — v6.1.2 (No external libs)
 
-## Local libraries (no CDN)
-All third‑party libs load from **/vendor** (offline). I’ve included placeholders and two helper scripts to download exact versions:
-- Windows: `get-vendor.ps1`
-- macOS/Linux: `get-vendor.sh`
+**What changed**
+- Removed all external vendor script tags and implemented:
+  - Built‑in **ZIP writer** (store mode) for exporting ZIP with CSV + photos.
+  - Built‑in **XLSX writer** (single‑sheet, inline strings) for Excel export.
+- Scanning uses native **BarcodeDetector** for multi‑format barcodes (Chrome/Edge).
+- CSV import kept; Excel import is disabled in this build.
+- Bluetooth/Serial **phone input** kept. Remote WebRTC unchanged (requires your Firebase config).
+- Fixed any syntax issues reported on earlier builds.
 
-**What’s loaded locally**
-- `vendor/jszip.min.js` (ZIP export)
-- `vendor/xlsx.full.min.js` (Excel import/export)
-- `vendor/jsQR.js` (QR fallback)
-- `vendor/zxing.min.js` + `vendor/zxing-browser.min.js` (Multi‑format: UPC/EAN/Code39/Code128/ITF/Codabar/Code93 + DataMatrix/PDF417/Aztec/QR)
-- `vendor/tesseract.min.js` (OCR weight from camera)
-
-> If a file isn’t present, features gracefully degrade; BarcodeDetector still works for many codes on Chrome/Edge.
-
-## Barcode formats supported
-- With **BarcodeDetector** (Chrome/Edge): QR, Aztec, Data Matrix, PDF417, Code‑128, Code‑39, Code‑93, Codabar, ITF, EAN‑13/8, UPC‑A/E (browser‑dependent).
-- With **ZXing fallback**: QR, Aztec, Data Matrix, PDF417, Code‑128/39/93, Codabar, ITF, EAN‑13/8, UPC‑A/E.  
-  *MaxiCode / Micro QR* support may be limited in the JS port. If those are critical, we can add an alternate decoder (e.g., ZBar WASM or a commercial SDK).
-
-## Remote phone via Bluetooth/Serial (Windows COM)
-Click **Connect Phone (Bluetooth/Serial)** to open a COM port connected to your paired Android phone (SPP). Send newline‑delimited JSON:
-```json
-{"t":"qr","content":"TEXT","img":"data:image/jpeg;base64,...","ts":1700000000000}
-```
-
-## Galaxy S24 assumptions
-The Android sample (below) uses **CameraX** at 1920×1080, continuous AF/AE, and ML Kit’s **BarcodeScanning** with all relevant formats.
-
-## Scripts
-- `Start-QR-Logger-Server.bat` or `Start-QR-Logger-Server.ps1` → local server for Windows 11.
-- `get-vendor.ps1` / `get-vendor.sh` → download vendor libs into `/vendor` (run once).
-
+**Note on OCR:** This build doesn’t embed Tesseract because of size. OCR weight capture UI is present; choose HID/BLE/phone for weight, or I can ship a Tesseract‑bundled variant if you prefer.

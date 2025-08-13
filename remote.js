@@ -1,4 +1,4 @@
-// Remote camera support (v6.1.1) — same WebRTC pairing module as before
+// Remote camera support (optional; requires your Firebase config)
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js';
