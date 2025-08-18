@@ -1,12 +1,30 @@
-# QR-Reader / QR Logger — v6.1.2 (No external libs)
+# QR-Reader — v7.0
 
-**What changed**
-- Removed all external vendor script tags and implemented:
-  - Built‑in **ZIP writer** (store mode) for exporting ZIP with CSV + photos.
-  - Built‑in **XLSX writer** (single‑sheet, inline strings) for Excel export.
-- Scanning uses native **BarcodeDetector** for multi‑format barcodes (Chrome/Edge).
-- CSV import kept; Excel import is disabled in this build.
-- Bluetooth/Serial **phone input** kept. Remote WebRTC unchanged (requires your Firebase config).
-- Fixed any syntax issues reported on earlier builds.
+**Full edition**: Multi‑engine (BarcodeDetector → ZXing → jsQR), delayed scale weight + photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP export, CSV+XLSX import, remote camera (WebRTC), phone→PC (Serial), PWA, localhost server.
 
-**Note on OCR:** This build doesn’t embed Tesseract because of size. OCR weight capture UI is present; choose HID/BLE/phone for weight, or I can ship a Tesseract‑bundled variant if you prefer.
+## One-time vendor step (prevents 404s)
+Populate `/vendor` locally (no CDNs at runtime), then commit:
+```
+Windows PowerShell: .\get-vendor.ps1
+macOS/Linux:       bash get-vendor.sh
+```
+This will create:
+```
+vendor/zxing.min.js
+vendor/zxing-browser.min.js
+vendor/jsQR.js
+vendor/tesseract.min.js
+vendor/xlsx.full.min.js
+```
+
+## Run locally
+```
+npm i
+npm start   # http://localhost:8080
+```
+
+## Deploy on GitHub Pages
+Push all files (including `/vendor`). Enable Pages → deploy from branch root.
+
+## Remote camera
+Edit `remote.js`: set `window.QR_REMOTE.firebaseConfig = { /* your Firebase config */ }` and enable Anonymous auth + Realtime Database. Or replace the signaling with your own WebSocket server.

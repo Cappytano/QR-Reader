@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR Logger — v6.1.2 (No external libs)</title>
+  <title>QR-Reader (7.0)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -23,9 +23,7 @@
     .frame{position:absolute;inset:0;border:2px dashed rgba(255,255,255,.25);border-radius:12px;pointer-events:none}
     .controls{display:flex;gap:8px;flex-wrap:wrap}.controls>*{flex:1 1 auto}
     button,select,input,textarea{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
-    button{cursor:pointer}
-    button.primary{background:linear-gradient(180deg,#1f7a3b,#14532d);border-color:#134e4a}
-    button.secondary{background:linear-gradient(180deg,#0b2a64,#0b1f3a);border-color:#0b1f3a}
+    button{cursor:pointer}button.primary{background:linear-gradient(180deg,#1f7a3b,#14532d);border-color:#134e4a}button.secondary{background:linear-gradient(180deg,#0b2a64,#0b1f3a);border-color:#0b1f3a}
     .status{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}
     .muted{color:var(--muted);font-size:12px}
     .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#0b2a64;border:1px solid #0b1f3a;color:#cfe1ff}
@@ -38,17 +36,22 @@
     .small{padding:6px 9px;font-size:12px}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .row label{font-size:12px;color:var(--muted)}
-    .row .tight{max-width:160px}
+    .row .tight{max-width:180px}
   </style>
+  <script src="vendor/zxing.min.js"></script>
+  <script src="vendor/zxing-browser.min.js"></script>
+  <script src="vendor/jsQR.js"></script>
+  <script src="vendor/tesseract.min.js"></script>
+  <script src="vendor/xlsx.full.min.js"></script>
 </head>
 <body>
   <header>
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
-        <h1>QR Logger</h1>
-        <div class="subtitle">v6.1.2 — No external libs (built‑in XLSX/ZIP), multi‑format via BarcodeDetector</div>
+        <h1>QR-Reader</h1>
+        <div class="subtitle">Full: multi‑engine scan, delayed scale weight & photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP, CSV+XLSX import, remote camera, phone→PC (Serial)</div>
       </div>
-      <div style="display:flex;gap:8px;min-width:320px">
+      <div style="display:flex;gap:8px;min-width:420px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
       </div>
     </div>
@@ -66,15 +69,15 @@
           <select id="cameraSource" title="Camera source" class="tight">
             <option value="local" selected>Local camera</option>
             <option value="remote">Remote camera (WebRTC)</option>
+            <option value="serial">Phone via Serial/Bluetooth</option>
           </select>
-
           <button id="remoteHostBtn" type="button" class="secondary">Create Session</button>
           <input id="remoteCodeInput" class="tight" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Enter code to join" title="Pairing code"/>
           <button id="remoteJoinBtn" type="button" class="secondary">Join</button>
         </div>
 
         <div class="controls row" style="margin-bottom:8px">
-          <button id="connectSerial" type="button" class="secondary" title="Connect phone via Bluetooth/Serial (Windows COM port)">Connect Phone (Bluetooth/Serial)</button>
+          <button id="connectSerial" type="button" class="secondary" title="Connect phone via Bluetooth/Serial (Windows COM port)">Connect Phone (Serial)</button>
           <span id="serialState" class="muted"></span>
         </div>
 
@@ -104,12 +107,6 @@
         </div>
 
         <div class="controls row" style="margin-top:8px">
-          <label class="sr-only" for="manualInput">Manual entry</label>
-          <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
-          <button id="addManualBtn" type="button">Add</button>
-        </div>
-
-        <div class="controls row" style="margin-top:8px">
           <label class="sr-only" for="scaleMode">Scale source</label>
           <select id="scaleMode" title="Scale source" class="tight">
             <option value="none" selected>No scale</option>
@@ -130,6 +127,12 @@
           <label><input id="ignoreDup" type="checkbox" checked/> Ignore duplicates during pause</label>
         </div>
 
+        <div class="controls row" style="margin-top:8px">
+          <label class="sr-only" for="manualInput">Manual entry</label>
+          <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
+          <button id="addManualBtn" type="button">Add</button>
+        </div>
+
         <div id="status" class="status" role="status" aria-live="polite"></div>
         <div id="remoteStatus" class="muted" style="margin-top:4px"></div>
         <div id="permState" class="muted" style="margin-top:4px"></div>
@@ -141,9 +144,9 @@
           <button id="exportXlsx" type="button" class="primary">Export Excel (.xlsx)</button>
           <button id="exportCsv" type="button" class="secondary">Export CSV</button>
           <button id="exportZip" type="button" class="secondary">Export ZIP (CSV+Photos)</button>
-          <button id="importFileBtn" type="button" class="secondary" aria-controls="fileInput">Import (CSV)</button>
+          <button id="importFileBtn" type="button" class="secondary" aria-controls="fileInput">Import (CSV+XLSX)</button>
           <label for="fileInput" class="sr-only">Choose file to import</label>
-          <input id="fileInput" type="file" accept=".csv" title="Choose file" aria-label="Choose file" style="display:none"/>
+          <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" title="Choose file" aria-label="Choose file" style="display:none"/>
           <button id="clearBtn" type="button" class="secondary" title="Clear all rows">Clear</button>
         </div>
         <div class="card" style="max-height:55vh;overflow:auto">
