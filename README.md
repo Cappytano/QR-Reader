@@ -1,6 +1,6 @@
-# QR-Reader — v7.0.1
+# QR-Reader — v7.0.2
 
-Maintenance update: corrected vendor file guidance (ZXing browser UMD is `zxing-browser.min.js`).
+Patch: verbose ZXing detection + service-worker cache bump to avoid stale vendor caching.
 
 **Full edition**: Multi‑engine (BarcodeDetector → ZXing → jsQR), delayed scale weight + photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP export, CSV+XLSX import, remote camera (WebRTC scaffold), phone→PC (Web Serial), PWA, localhost server.
 
