@@ -134,7 +134,34 @@
     })();
   }
   const sample=document.createElement('canvas'); const sctx=sample.getContext('2d',{willReadFrequently:true});
-  function setupZXing(){ if(zxingReader) return true; try{ const ZXBrowser=window.ZXingBrowser||window; if(ZXBrowser && ZXBrowser.BrowserMultiFormatReader){ zxingReader=new ZXBrowser.BrowserMultiFormatReader(); return true; } }catch(e){} return false; }
+  function setupZXing() {
+  if (window.__ZXDbg == null) window.__ZXDbg = {};
+  const dbg = window.__ZXDbg;
+
+  dbg.hasZXing = typeof window.ZXing !== 'undefined';
+  dbg.hasZXingBrowser = typeof window.ZXingBrowser !== 'undefined';
+  dbg.hasBMFReader = !!(window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader);
+
+  if (!dbg.hasZXing || !dbg.hasZXingBrowser || !dbg.hasBMFReader) {
+    console.warn('ZXing wiring:', dbg);
+    const hints = [];
+    if (!dbg.hasZXing) hints.push('vendor/zxing.min.js missing or not loaded first');
+    if (!dbg.hasZXingBrowser) hints.push('vendor/zxing-browser.min.js missing');
+    if (!dbg.hasBMFReader) hints.push('BrowserMultiFormatReader not on ZXingBrowser (wrong file/version)');
+    setStatus('ZXing not available: ' + hints.join(' | '));
+    return false;
+  }
+
+  try {
+    window.zxingReader = new window.ZXingBrowser.BrowserMultiFormatReader();
+    return true;
+  } catch (e) {
+    console.error('ZXing init error', e);
+    setStatus('ZXing init error: ' + (e.message || e));
+    return false;
+  }
+}
+
   function loopZXing(){
     if(!scanning || !video || video.readyState<2){ scanTimer=setTimeout(loopZXing,180); return; }
     if(inCooldown()){ scanTimer=setTimeout(loopZXing,300); return; }
