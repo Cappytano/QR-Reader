@@ -1,4 +1,4 @@
-const CACHE='qr-reader-7-0';
+const CACHE='qr-reader-7-0-1';
 self.addEventListener('install', e=>self.skipWaiting());
 self.addEventListener('activate', e=>e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', event=>{

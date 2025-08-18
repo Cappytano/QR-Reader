@@ -1,6 +1,8 @@
-# QR-Reader — v7.0
+# QR-Reader — v7.0.1
 
-**Full edition**: Multi‑engine (BarcodeDetector → ZXing → jsQR), delayed scale weight + photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP export, CSV+XLSX import, remote camera (WebRTC), phone→PC (Serial), PWA, localhost server.
+Maintenance update: corrected vendor file guidance (ZXing browser UMD is `zxing-browser.min.js`).
+
+**Full edition**: Multi‑engine (BarcodeDetector → ZXing → jsQR), delayed scale weight + photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP export, CSV+XLSX import, remote camera (WebRTC scaffold), phone→PC (Web Serial), PWA, localhost server.
 
 ## One-time vendor step (prevents 404s)
 Populate `/vendor` locally (no CDNs at runtime), then commit:
@@ -17,14 +19,11 @@ vendor/tesseract.min.js
 vendor/xlsx.full.min.js
 ```
 
-## Run locally
+## Local dev
 ```
 npm i
 npm start   # http://localhost:8080
 ```
 
-## Deploy on GitHub Pages
+## GitHub Pages
 Push all files (including `/vendor`). Enable Pages → deploy from branch root.
-
-## Remote camera
-Edit `remote.js`: set `window.QR_REMOTE.firebaseConfig = { /* your Firebase config */ }` and enable Anonymous auth + Realtime Database. Or replace the signaling with your own WebSocket server.
