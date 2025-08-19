@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR-Reader (7.1.0)</title>
+  <title>QR-Reader (7.1.1)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
-  <link rel="icon" href="icons/icon-192.png"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
   <style>
     :root{--bg:#0b1220;--panel:#0f172a;--muted:#94a3b8;--text:#e2e8f0;--accent:#22c55e;--border:#1f2937;--radius:16px}
     *{box-sizing:border-box}html,body{height:100%}
@@ -46,7 +47,7 @@
           ZXingWASM.prepareZXingModule({
             overrides: {
               locateFile: function(path, prefix){
-                return path.match(/\.wasm$/) ? 'vendor/zxing_reader.wasm' : (prefix || '') + path;
+                return /\.wasm$/i.test(path) ? 'vendor/zxing_reader.wasm' : (prefix || '') + path;
               }
             }
           });
@@ -63,7 +64,7 @@
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR-Reader</h1>
-        <div class="subtitle">v7.1.0 — Engines: BarcodeDetector → zxing‑wasm → jsQR • Scale OCR/HID/BLE • CSV/XLSX/ZIP • Import CSV/XLSX • Remote cam scaffold • Serial phone</div>
+        <div class="subtitle">v7.1.1 — Engines: BarcodeDetector → zxing‑wasm → jsQR • Scale OCR/HID/BLE • CSV/XLSX/ZIP • Import CSV/XLSX • Remote cam scaffold • Serial phone</div>
       </div>
       <div style="display:flex;gap:8px;min-width:420px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>

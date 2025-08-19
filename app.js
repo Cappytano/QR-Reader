@@ -1,4 +1,4 @@
-// QR-Reader Full v7.1.0 — switch to zxing-wasm fallback
+// QR-Reader Full v7.1.1 — zxing-wasm + fixed ZIP builder
 (function(){
   'use strict';
   const $=s=>document.querySelector(s);
@@ -40,7 +40,7 @@
       try{
         const {value, done} = await serialReader.read();
         if(done) break;
-        if(value){ buf += value; const lines = buf.split(/\r?\n/); buf = lines.pop(); for(let i=0;i<lines.length;i++){ const t=lines[i].trim(); if(t){ handleDetection(t, 'serial'); } } }
+        if(value){ buf += value; const lines = buf.split(/\\r?\\n/); buf = lines.pop(); for(let i=0;i<lines.length;i++){ const t=lines[i].trim(); if(t){ handleDetection(t, 'serial'); } } }
       }catch(e){ break; }
     }
   }
@@ -79,7 +79,7 @@
     const errors=[];
     async function attempt(v){
       try{ stop(); setStatus('Starting camera…'); const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080},...v},audio:false}); useStream(s,'Camera'); return true; }
-      catch(e){ errors.push(e.name+': '+e.message); return false; }
+      catch(e){ errors.append?errors.append(e):errors.push(e.name+': '+e.message); return false; }
     }
     const id=cameraSelect.value;
     if(id && await attempt({deviceId:{exact:id}})) return true;
@@ -140,7 +140,7 @@
       try{
         let det=null;
         try{ det=await detector.detect(video); }catch(e){}
-        if(det && det.length){ const c=det[0]; const text=c.rawValue||''; if(text){ handleDetection(text,c.format||'qr_code'); setTimeout(loopBD,200); return; } }
+        if(det && det.length){ const c=det[0]; const text=c.rawValue||''; if(text){ handleDetection(text,c.format||'qr_code'); setTimeout(loopBD,220); return; } }
       }catch(e){}
       scanTimer=setTimeout(loopBD,140);
     })();
@@ -299,14 +299,82 @@
   $('#addManualBtn').addEventListener('click', function(){ const v=manualInput && manualInput.value ? manualInput.value.trim() : ''; if(v){ upsert(v,'text','manual/keyboard'); manualInput.value=''; } });
   if(manualInput){ manualInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); const v=manualInput.value.trim(); if(v){ upsert(v,'text','manual/keyboard'); manualInput.value=''; } } }); }
 
-  // Built-in exporters + SheetJS override
-  const Zip=(function(){function ct(){var t=new Uint32Array(256);for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++){c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);}t[n]=c>>>0;}return t;}var TBL=ct();function crc32(u8){var c=~0>>>0;for(var i=0;i<u8.length;i++){c=TBL[(c^u8[i])&0xFF]^(c>>>8);}return(~c)>>>0;}function toU8(s){return new TextEncoder().encode(s);}function d2d(d){var dt=new Date(d||Date.now());var time=(dt.getHours()<<11)|(dt.getMinutes()<<5)|((Math.floor(dt.getSeconds()/2))&0x1F);var date=((dt.getFullYear()-1980)<<9)|((dt.getMonth()+1)<<5)|dt.getDate();return{time:time,date:date};}function w32(v,o,x){v.setUint32(o,x>>>0,true);}function w16(v,o,x){v.setUint16(v,o,x);}
-    return{make:function(files){var parts=[],central=[],offset=0;function w32dv(v,o,x){v.setUint32(o,x>>>0,true);}function w16dv(v,o,x){v.setUint16(o,x&0xFFFF,true);}var stamp=d2d(Date.now());files.forEach(function(f){var nameU8=toU8(f.name);var b=f.bytes instanceof Uint8Array?f.bytes:toU8(String(f.bytes||''));var crc=crc32(b);var hdr=new DataView(new ArrayBuffer(30));w32dv(hdr,0,0x04034b50);w16dv(hdr,4,20);w16dv(hdr,6,0);w16dv(hdr,8,0);w16dv(hdr,10,stamp.time);w16dv(hdr,12,stamp.date);w32dv(hdr,14,crc);w32dv(hdr,18,b.length);w32dv(hdr,22,b.length);w16dv(hdr,26,nameU8.length);w16dv(hdr,28,0);parts.push(new Uint8Array(hdr.buffer));parts.push(nameU8);parts.push(b);var cen=new DataView(new ArrayBuffer(46));w32dv(cen,0,0x02014b50);w16dv(cen,4,20);w16dv(cen,6,20);w16dv(cen,8,0);w16dv(cen,10,0);w16dv(cen,12,stamp.time);w16dv(cen,14,stamp.date);w32dv(cen,16,crc);w32dv(cen,20,b.length);w32dv(cen,24,b.length);w16dv(cen,28,nameU8.length);w16dv(cen,30,0);w16dv(cen,32,0);w16dv(cen,34,0);w16dv(cen,36,0);w32dv(cen,38,0);w32dv(cen,42,offset);central.push(new Uint8Array(cen.buffer));central.push(nameU8);offset+=30+nameU8.length+b.length;});var centralSize=central.reduce(function(a,u){return a+u.length;},0);var eocd=new DataView(new ArrayBuffer(22));w32dv(eocd,0,0x06054b50);w16dv(eocd,4,0);w16dv(eocd,6,0);w16dv(eocd,8,files.length);w16dv(eocd,10,files.length);w32dv(eocd,12,centralSize);w32dv(eocd,16,parts.reduce(function(a,u){return a+u.length;},0));w16dv(eocd,20,0);var totalLen=parts.reduce(function(a,u){return a+u.length;},0)+centralSize+eocd.byteLength;var out=new Uint8Array(totalLen);var p=0;parts.concat(central).forEach(function(u){out.set(u,p);p+=u.length;});out.set(new Uint8Array(eocd.buffer),p);return new Blob([out],{type:'application/zip'});}})();
+  // Minimal ZIP builder (store only, no compression) — avoids external libs
+  const Zip=(function(){
+    function crcTable(){
+      const t=new Uint32Array(256);
+      for(let n=0;n<256;n++){
+        let c=n;
+        for(let k=0;k<8;k++){ c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); }
+        t[n]=c>>>0;
+      }
+      return t;
+    }
+    const TBL=crcTable();
+    function crc32(u8){
+      let c=~0>>>0;
+      for(let i=0;i<u8.length;i++){ c=TBL[(c^u8[i])&0xFF]^(c>>>8); }
+      return (~c)>>>0;
+    }
+    function u16(n){ return new Uint8Array([n&255,(n>>>8)&255]); }
+    function u32(n){ return new Uint8Array([n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255]); }
+    function strU8(s){ return new TextEncoder().encode(String(s)); }
+    function dosStamp(d){
+      const dt=new Date(d||Date.now());
+      const time=(dt.getHours()<<11)|(dt.getMinutes()<<5)|((dt.getSeconds()//2)&31);
+      const date=((dt.getFullYear()-1980)<<9)|((dt.getMonth()+1)<<5)|dt.getDate();
+      return {time,date};
+    }
+    function concat(arrs){
+      let len=0; for(const a of arrs) len+=a.length;
+      const out=new Uint8Array(len);
+      let p=0; for(const a of arrs){ out.set(a,p); p+=a.length; }
+      return out;
+    }
+    function make(files){
+      const stamp=dosStamp(Date.now());
+      const locals=[]; const centrals=[];
+      let offset=0;
+      for(const f of files){
+        const name=strU8(f.name);
+        const bytes=(f.bytes instanceof Uint8Array)?f.bytes:strU8(f.bytes||"");
+        const crc=crc32(bytes);
+        const lfh=concat([
+          u32(0x04034b50), u16(20), u16(0), u16(0),
+          u16(stamp.time), u16(stamp.date),
+          u32(crc), u32(bytes.length), u32(bytes.length),
+          u16(name.length), u16(0), name, bytes
+        ]);
+        locals.push(lfh);
+        const cdf=concat([
+          u32(0x02014b50), u16(20), u16(20), u16(0), u16(0),
+          u16(stamp.time), u16(stamp.date),
+          u32(crc), u32(bytes.length), u32(bytes.length),
+          u16(name.length), u16(0), u16(0), u16(0), u16(0),
+          u32(0), u32(offset), name
+        ]);
+        centrals.push(cdf);
+        offset += lfh.length;
+      }
+      const centralBlob=concat(centrals);
+      const localsBlob=concat(locals);
+      const eocd=concat([
+        u32(0x06054b50), u16(0), u16(0),
+        u16(files.length), u16(files.length),
+        u32(centralBlob.length), u32(localsBlob.length),
+        u16(0)
+      ]);
+      return new Blob([localsBlob, centralBlob, eocd], {type:'application/zip'});
+    }
+    function strToU8(s){ return strU8(s); }
+    return { make, strToU8 };
+  })();
+
   function rowsForExport(){ return data.map(function(r){return {"Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||"","Time":r.time||"","Weight":r.weight||"","Photo":r.photo||"","Count":r.count,"Notes":r.notes||"","Timestamp":r.timestamp||""};}); }
-  function xlsxBuiltIn(rows,sheetName){sheetName=sheetName||'Log';function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}function colRef(n){let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}const cols=rows.length?Object.keys(rows[0]):[];const sheet=['<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>','<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>'];sheet.push('<row r=\"1\">');cols.forEach(function(c,i){sheet.push('<c r=\"'+colRef(i+1)+'1\" t=\"inlineStr\"><is><t>'+escXml(c)+'</t></is></c>');});sheet.push('</row>');rows.forEach(function(r,idx){const rr=idx+2;sheet.push('<row r=\"'+rr+'\">');cols.forEach(function(c,i){const v=(r[c]==null?'':String(r[c]));sheet.push('<c r=\"'+colRef(i+1)+rr+'\" t=\"inlineStr\"><is><t>'+escXml(v)+'</t></is></c>');});sheet.push('</row>');});sheet.push('</sheetData></worksheet>');const sheetXml=sheet.join('');const parts=[{name:'[Content_Types].xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\\n<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\\n<Default Extension=\"xml\" ContentType=\"application/xml\"/>\\n<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>\\n<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\\n<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>\\n<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>\\n</Types>'},{name:'_rels/.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>\\n  <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/>\\n  <Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" Target=\"docProps/app.xml\"/>\\n</Relationships>'},{name:'docProps/core.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},{name:'docProps/app.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>QR Logger</Application></Properties>'},{name:'xl/_rels/workbook.xml.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\\n</Relationships>'},{name:'xl/workbook.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\\n  <sheets><sheet name=\"Log\" sheetId=\"1\" r:id=\"rId1\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"/></sheets>\\n</workbook>'},{name:'xl/worksheets/sheet1.xml',text:sheetXml}];const files=parts.map(function(p){return {name:p.name,bytes:new TextEncoder().encode(p.text)};});return Zip.make(files);}
+  function xlsxBuiltIn(rows,sheetName){sheetName=sheetName||'Log';function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}function colRef(n){let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}const cols=rows.length?Object.keys(rows[0]):[];const sheet=['<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>','<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>'];sheet.push('<row r=\"1\">');cols.forEach(function(c,i){sheet.push('<c r=\"'+colRef(i+1)+'1\" t=\"inlineStr\"><is><t>'+escXml(c)+'</t></is></c>');});sheet.push('</row>');rows.forEach(function(r,idx){const rr=idx+2;sheet.push('<row r=\"'+rr+'\">');cols.forEach(function(c,i){const v=(r[c]==null?'':String(r[c]));sheet.push('<c r=\"'+colRef(i+1)+rr+'\" t=\"inlineStr\"><is><t>'+escXml(v)+'</t></is></c>');});sheet.push('</row>');});sheet.push('</sheetData></worksheet>');const sheetXml=sheet.join('');const parts=[{name:'[Content_Types].xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\\n<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\\n<Default Extension=\"xml\" ContentType=\"application/xml\"/>\\n<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>\\n<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\\n<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>\\n<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>\\n</Types>'},{name:'_rels/.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>\\n  <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/>\\n  <Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" Target=\"docProps/app.xml\"/>\\n</Relationships>'},{name:'docProps/core.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},{name:'docProps/app.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>QR Logger</Application></Properties>'},{name:'xl/_rels/workbook.xml.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\\n</Relationships>'},{name:'xl/workbook.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\\n  <sheets><sheet name=\"'+escapeAttr(sheetName)+'\" sheetId=\"1\" r:id=\"rId1\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"/></sheets>\\n</workbook>'},{name:'xl/worksheets/sheet1.xml',text:sheetXml}];const files=parts.map(function(p){return {name:p.name,bytes:Zip.strToU8(p.text)};});return Zip.make(files);}
   function exportXlsx(){ if(window.XLSX){ const ws=window.XLSX.utils.json_to_sheet(rowsForExport()); const wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); const out = window.XLSX.write(wb, {bookType:'xlsx', type:'array'}); const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); download(blob, 'qr-log-'+ts()+'.xlsx'); } else { const blob=xlsxBuiltIn(rowsForExport(),'Log'); download(blob, 'qr-log-'+ts()+'.xlsx'); } }
   function exportCsv(){ const headers=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; const rows=[headers].concat(data.map(function(r){return [r.content,r.format,r.source,r.date||'',r.time||'',r.weight||'',r.photo||'',r.count,r.notes||'',r.timestamp||''];})); const csv=rows.map(function(row){return row.map(function(f){const s=((f==null)?'':String(f)).replace(/\"/g,'\"\"');return /[\",\\n]/.test(s)?('\"'+s+'\"'):s;}).join(',');}).join('\\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); download(blob, 'qr-log-'+ts()+'.csv'); }
-  function exportZip(){ const headers=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; const rows=[headers].concat(data.map(function(r){return [r.content,r.format,r.source,r.date||'',r.time||'',r.weight||'',r.photo?('photo-'+(r.id||'')+'.jpg'):'',r.count,r.notes||'',r.timestamp||''];})); const csv=rows.map(function(row){return row.map(function(f){const s=(f==null? '' : String(f)).replace(/\"/g,'\"\"');return /[\",\\n]/.test(s)?('\"'+s+'\"'):s;}).join(',');}).join('\\n'); const files=[{name:'qr-log-'+ts()+'.csv',bytes:new TextEncoder().encode(csv)}]; for(let i=0;i<data.length;i++){ const r=data[i]; if(r.photo && r.photo.startsWith('data:image')){ try{ const b64=r.photo.split(',')[1]; const bytes=Uint8Array.from(atob(b64), function(c){return c.charCodeAt(0);}); files.push({name:'photo-'+(r.id||('row'+i))+'.jpg', bytes:bytes}); }catch(e){} } } const blob=Zip.make(files); download(blob, 'qr-log-bundle-'+ts()+'.zip'); }
+  function exportZip(){ const headers=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; const rows=[headers].concat(data.map(function(r){return [r.content,r.format,r.source,r.date||'',r.time||'',r.weight||'',r.photo?('photo-'+(r.id||'')+'.jpg'):'',r.count,r.notes||'',r.timestamp||''];})); const csv=rows.map(function(row){return row.map(function(f){const s=(f==null? '' : String(f)).replace(/\"/g,'\"\"');return /[\",\\n]/.test(s)?('\"'+s+'\"'):s;}).join(',');}).join('\\n'); const files=[{name:'qr-log-'+ts()+'.csv',bytes:Zip.strToU8(csv)}]; for(let i=0;i<data.length;i++){ const r=data[i]; if(r.photo && r.photo.startsWith('data:image')){ try{ const b64=r.photo.split(',')[1]; const bytes=Uint8Array.from(atob(b64), function(c){return c.charCodeAt(0);}); files.push({name:'photo-'+(r.id||('row'+i))+'.jpg', bytes:bytes}); }catch(e){} } } const blob=Zip.make(files); download(blob, 'qr-log-bundle-'+ts()+'.zip'); }
   const ts=function(){ return new Date().toISOString().slice(0,19).replace(/[:T]/g,'-'); };
   function download(blob, name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},500); }
 

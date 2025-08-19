@@ -1,6 +1,6 @@
-# QR-Reader — v7.1.0
+# QR-Reader — v7.1.1
 
-**Change:** Replaced @zxing/library + zxing-browser with **zxing-wasm** (WASM ZXing-C++) for reliable multi-symbology fallback.
+**Fix:** Resolved `Unexpected token ')'` by rewriting the in‑browser ZIP builder (store‑only). Also ships proper PNG icons to eliminate the manifest icon error.
 
 Engine order: **BarcodeDetector → zxing-wasm → jsQR**.
 
