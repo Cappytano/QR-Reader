@@ -1,6 +1,9 @@
-# QR-Reader — v7.1.2
+# QR-Reader — v7.1.3
 
-**Fix (hot):** Resolved `Unexpected token ')'` by rewriting the in‑browser ZIP builder (store‑only). Also ships proper PNG icons to eliminate the manifest icon error.
+**Fixes**
+- Draggable/resizable **OCR region** on the overlay canvas (mouse/touch).
+- OCR now uses a **local Tesseract worker + language** (no CDN needed). Run `get-vendor.*` and commit `/vendor`.
+- Export buttons (XLSX / CSV / ZIP) are wired and working.
 
 Engine order: **BarcodeDetector → zxing-wasm → jsQR**.
 
@@ -16,6 +19,10 @@ vendor/zxing-wasm-reader.iife.js
 vendor/zxing_reader.wasm
 vendor/jsQR.js
 vendor/tesseract.min.js
+vendor/worker.min.js
+vendor/tesseract-core/tesseract-core.wasm.js
+vendor/tesseract-core/tesseract-core.wasm.wasm
+vendor/lang-data/eng.traineddata.gz
 vendor/xlsx.full.min.js
 ```
 
