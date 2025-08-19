@@ -321,7 +321,7 @@
     function strU8(s){ return new TextEncoder().encode(String(s)); }
     function dosStamp(d){
       const dt=new Date(d||Date.now());
-      const time=(dt.getHours()<<11)|(dt.getMinutes()<<5)|((dt.getSeconds()//2)&31);
+      const time=(dt.getHours()<<11)|(dt.getMinutes()<<5)|((Math.floor(dt.getSeconds()/2))&31);
       const date=((dt.getFullYear()-1980)<<9)|((dt.getMonth()+1)<<5)|dt.getDate();
       return {time,date};
     }

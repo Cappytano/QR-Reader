@@ -1,6 +1,6 @@
-# QR-Reader — v7.1.1
+# QR-Reader — v7.1.2
 
-**Fix:** Resolved `Unexpected token ')'` by rewriting the in‑browser ZIP builder (store‑only). Also ships proper PNG icons to eliminate the manifest icon error.
+**Fix (hot):** Resolved `Unexpected token ')'` by rewriting the in‑browser ZIP builder (store‑only). Also ships proper PNG icons to eliminate the manifest icon error.
 
 Engine order: **BarcodeDetector → zxing-wasm → jsQR**.
 
