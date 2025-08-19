@@ -1,19 +1,19 @@
-# QR-Reader — v7.0.2
+# QR-Reader — v7.1.0
 
-Patch: verbose ZXing detection + service-worker cache bump to avoid stale vendor caching.
+**Change:** Replaced @zxing/library + zxing-browser with **zxing-wasm** (WASM ZXing-C++) for reliable multi-symbology fallback.
 
-**Full edition**: Multi‑engine (BarcodeDetector → ZXing → jsQR), delayed scale weight + photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP export, CSV+XLSX import, remote camera (WebRTC scaffold), phone→PC (Web Serial), PWA, localhost server.
+Engine order: **BarcodeDetector → zxing-wasm → jsQR**.
 
 ## One-time vendor step (prevents 404s)
-Populate `/vendor` locally (no CDNs at runtime), then commit:
+Populate `/vendor` locally, then commit:
 ```
 Windows PowerShell: .\get-vendor.ps1
 macOS/Linux:       bash get-vendor.sh
 ```
 This will create:
 ```
-vendor/zxing.min.js
-vendor/zxing-browser.min.js
+vendor/zxing-wasm-reader.iife.js
+vendor/zxing_reader.wasm
 vendor/jsQR.js
 vendor/tesseract.min.js
 vendor/xlsx.full.min.js

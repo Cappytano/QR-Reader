@@ -2,10 +2,9 @@
 set -e
 mkdir -p vendor
 get(){ local url="$1"; local out="$2"; if [ -f "$out" ]; then return; fi; echo "Downloading $out"; curl -L "$url" -o "$out"; }
-# ZXing (UMD core) → vendor/zxing.min.js
-get "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" "vendor/zxing.min.js"
-# ZXing (browser UMD) → vendor/zxing-browser.min.js
-get "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js" "vendor/zxing-browser.min.js"
+# zxing-wasm (IIFE reader + WASM)
+get "https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.1/dist/iife/reader/index.js" "vendor/zxing-wasm-reader.iife.js"
+get "https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.1/dist/reader/zxing_reader.wasm" "vendor/zxing_reader.wasm"
 # jsQR
 get "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" "vendor/jsQR.js"
 # Tesseract.js

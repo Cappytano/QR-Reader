@@ -1,6 +1,6 @@
 {
   "name": "qr-reader",
-  "version": "7.0.2",
+  "version": "7.1.0",
   "private": true,
   "description": "QR-Reader full site",
   "scripts": {

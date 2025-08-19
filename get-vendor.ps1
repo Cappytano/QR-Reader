@@ -2,10 +2,9 @@
 $ProgressPreference='SilentlyContinue'
 mkdir vendor -ea 0 | Out-Null
 function Get-IfMissing($url,$out){ if(Test-Path $out){ return }; Write-Host "Downloading $out"; Invoke-WebRequest -Uri $url -OutFile $out }
-# ZXing (UMD core) → save as vendor/zxing.min.js
-Get-IfMissing "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" "vendor/zxing.min.js"
-# ZXing (browser UMD) → vendor/zxing-browser.min.js
-Get-IfMissing "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js" "vendor/zxing-browser.min.js"
+# zxing-wasm (IIFE reader + WASM)
+Get-IfMissing "https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.1/dist/iife/reader/index.js" "vendor/zxing-wasm-reader.iife.js"
+Get-IfMissing "https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.1/dist/reader/zxing_reader.wasm" "vendor/zxing_reader.wasm"
 # jsQR
 Get-IfMissing "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" "vendor/jsQR.js"
 # Tesseract.js
