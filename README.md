@@ -1,9 +1,9 @@
-# QR-Reader — v7.1.3
+# QR-Reader — v7.1.4
 
 **Fixes**
-- Draggable/resizable **OCR region** on the overlay canvas (mouse/touch).
-- OCR now uses a **local Tesseract worker + language** (no CDN needed). Run `get-vendor.*` and commit `/vendor`.
-- Export buttons (XLSX / CSV / ZIP) are wired and working.
+- OCR weight automatically normalized to **grams (numeric)**. Inputs like `2.1kg`, `0.45 lb`, `10oz`, `123g` are stored as grams **without units**.
+- Added a bottom-right **toast confirmation** when OCR/HID/BLE weight capture completes.
+- **Excel export cannot contain > 32,767 chars per cell** (Excel limitation). The Photo column is now exported as a **filename** (e.g., `photo-<id>.jpg`) and long values are truncated. Use **ZIP** export to get actual JPEGs with a CSV.
 
 Engine order: **BarcodeDetector → zxing-wasm → jsQR**.
 

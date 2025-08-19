@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR-Reader (7.1.3)</title>
+  <title>QR-Reader (7.1.4)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -35,6 +35,7 @@
     .thumb{width:64px;height:auto;border-radius:6px;border:1px solid var(--border)}
     .small{padding:6px 9px;font-size:12px}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row label{font-size:12px;color:var(--muted)}.row .tight{max-width:180px}
+    #toast{position:fixed;right:16px;bottom:16px;z-index:1000;display:none;max-width:60ch;background:#0b2a64;border:1px solid #1e3a8a;color:#cfe1ff;border-radius:12px;padding:10px 12px;box-shadow:0 6px 28px rgba(0,0,0,.35)}
   </style>
 
   <!-- Vendor (local, no CDNs at runtime) -->
@@ -63,7 +64,7 @@
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR-Reader</h1>
-        <div class="subtitle">v7.1.3 — Draggable OCR box • Local Tesseract worker/lang • Export buttons wired • Engines: BD → zxing‑wasm → jsQR</div>
+        <div class="subtitle">v7.1.4 — OCR ➜ grams + toast confirmation • XLSX export safe (no 32k strings)</div>
       </div>
       <div style="display:flex;gap:8px;min-width:420px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
@@ -73,6 +74,7 @@
 
   <main class="wrap">
     <div id="androidBanner" class="banner" style="display:none"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
 
     <div class="grid">
       <section class="card"><div class="content">
@@ -166,7 +168,7 @@
         <div class="card" style="max-height:55vh;overflow:auto">
           <table id="logTable">
             <thead><tr>
-              <th>#</th><th>Content</th><th>Format</th><th>Source</th><th>Date</th><th>Time</th><th>Weight</th><th>Photo</th><th>Count</th><th>Notes</th><th>Actions</th>
+              <th>#</th><th>Content</th><th>Format</th><th>Source</th><th>Date</th><th>Time</th><th>Weight (g)</th><th>Photo</th><th>Count</th><th>Notes</th><th>Actions</th>
             </tr></thead>
             <tbody id="logBody"></tbody>
           </table>
@@ -174,6 +176,8 @@
       </div></section>
     </div>
   </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
   <script type="module" src="remote.js"></script>

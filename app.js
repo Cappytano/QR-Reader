@@ -1,4 +1,4 @@
-// QR-Reader Full v7.1.3 — Draggable OCR ROI + local Tesseract + fixed exports
+// QR-Reader Full v7.1.4 — OCR ➜ grams + toast + XLSX safe export
 (function(){
   'use strict';
   const $=s=>document.querySelector(s);
@@ -11,6 +11,7 @@
   const ocrToggleBtn=$('#ocrToggle'), connectHIDBtn=$('#connectHID'), connectBLEBtn=$('#connectBLE');
   const serialBtn=$('#connectSerial'), serialState=$('#serialState');
   const exportXlsxBtn=$('#exportXlsx'), exportCsvBtn=$('#exportCsv'), exportZipBtn=$('#exportZip'), clearBtn=$('#clearBtn');
+  const toastEl=$('#toast');
 
   let stream=null, scanning=false, detector=null;
   let data=[]; const STORAGE_KEY='qrLoggerFull';
@@ -66,6 +67,13 @@
   }
 
   const setStatus=t=>{ if(statusEl) statusEl.textContent=t||''; };
+  const toast=(t)=>{
+    if(!toastEl) return;
+    toastEl.textContent = t;
+    toastEl.style.display = 'block';
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(()=>{ toastEl.style.display='none'; }, 1800);
+  };
   const save=()=>{ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){} };
   const load=()=>{ try{ data=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch(e){ data=[]; } };
   async function updatePerm(){ if(!('permissions' in navigator)) return; try{ const st=await navigator.permissions.query({name:'camera'}); if(permStateEl){ permStateEl.textContent='Permission: '+st.state; } st.onchange=function(){ if(permStateEl){ permStateEl.textContent='Permission: '+st.state; } }; }catch(e){} }
@@ -225,6 +233,21 @@
     save(); render();
   }
 
+  function toGramsString(txt){
+    if(!txt) return '';
+    const raw = String(txt).trim();
+    const m = raw.match(/([-+]?\\d*\\.?\\d+)\\s*(kg|g|gram|grams|lb|lbs|oz)?/i);
+    if(!m) return '';
+    const val = parseFloat(m[1]);
+    const unit = (m[2]||'g').toLowerCase();
+    let grams = val;
+    if(unit==='kg'){ grams = val*1000; }
+    else if(unit==='lb' || unit==='lbs'){ grams = val*453.59237; }
+    else if(unit==='oz'){ grams = val*28.349523125; }
+    const s = Math.round(grams*100)/100;
+    return (Math.abs(s - Math.round(s)) < 1e-9) ? String(Math.round(s)) : String(s);
+  }
+
   async function ocrWeight(row){
     const wpr = ensureTesseract();
     if(!wpr){ setStatus('Tesseract not loaded (populate /vendor then reload).'); return; }
@@ -237,9 +260,9 @@
       const worker = await wpr;
       const res = await worker.recognize(c);
       const txt=(res.data&&res.data.text)?res.data.text:'';
-      const m=txt.replace(/[, ]/g,'').match(/[-+]?\\d*\\.?\\d+(?:kg|g|lb|lbs|oz)?/i);
-      if(m){ row.weight=m[0]; save(); render(); setStatus('Weight OCR: '+m[0]); }
-      else{ setStatus('OCR: no numeric weight found.'); }
+      const grams = toGramsString(txt);
+      if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); }
+      else{ setStatus('OCR: no numeric weight found.'); toast('OCR: no numeric weight found'); }
     }catch(e){ setStatus('OCR error: '+(e.message||e)); }
   }
   async function hidWeight(row){
@@ -253,8 +276,8 @@
       d.addEventListener('inputreport', function(e){
         const bytes = new Uint8Array(e.data.buffer);
         let str=''; for(let i=0;i<bytes.length;i++){ const c=bytes[i]; if(c>=32&&c<127) str+=String.fromCharCode(c); }
-        const m=str.replace(/[, ]/g,'').match(/[-+]?\\d*\\.?\\d+\\s*(?:kg|g|lb|lbs|oz)?/i);
-        if(m){ const weight=m[0]; row.weight=weight; save(); render(); setStatus('HID weight: '+weight); }
+        const grams = toGramsString(str);
+        if(grams){ row.weight=grams; save(); render(); setStatus('HID weight: '+grams+' g'); toast('Captured weight: '+grams+' g'); }
       });
     }catch(e){ setStatus('HID error: '+(e.message||e)); }
   }
@@ -264,82 +287,18 @@
       const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: ['device_information','battery_service'] });
       await device.gatt.connect();
       setStatus('BLE connected: '+(device.name||'device'));
-      // Implement device-specific weight parsing as needed.
     }catch(e){ setStatus('BLE error: '+(e.message||e)); }
   }
 
-  // ---------- OCR ROI drawing and interaction ----------
-  let drag=null; // {mode:'move'|'nw'|'ne'|'sw'|'se', ox, oy, rx, ry}
-  function drawROI(){
-    if(!octx) return; octx.clearRect(0,0,overlay.width,overlay.height);
-    if(!roi.show) { overlay.style.pointerEvents='none'; return; }
-    overlay.style.pointerEvents='auto';
-    const x=roi.x*overlay.width, y=roi.y*overlay.height, w=roi.w*overlay.width, h=roi.h*overlay.height;
-    octx.save();
-    octx.strokeStyle='rgba(255,255,255,0.85)'; octx.lineWidth=2; octx.setLineDash([6,4]); octx.strokeRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));
-    octx.setLineDash([]);
-    const s=10;
-    const pts=[ [x,y,'nw'], [x+w,y,'ne'], [x,y+h,'sw'], [x+w,y+h,'se'] ];
-    octx.fillStyle='rgba(34,197,94,0.9)'; octx.strokeStyle='#000'; octx.lineWidth=1;
-    for(const p of pts){ octx.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s); octx.strokeRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s); }
-    octx.restore();
-  }
-  function norm(ev){
-    const rect=overlay.getBoundingClientRect();
-    const pt = ('touches' in ev && ev.touches.length)? ev.touches[0] : ev;
-    let nx=(pt.clientX-rect.left)/rect.width, ny=(pt.clientY-rect.top)/rect.height;
-    nx=Math.max(0,Math.min(1,nx)); ny=Math.max(0,Math.min(1,ny));
-    return {nx,ny};
-  }
-  function hit(nx,ny){
-    const m=0.02;
-    const inBox = nx>=roi.x && ny>=roi.y && nx<=roi.x+roi.w && ny<=roi.y+roi.h;
-    const near = (ax,ay)=> Math.abs(nx-ax)<=m && Math.abs(ny-ay)<=m;
-    if(near(roi.x, roi.y)) return 'nw';
-    if(near(roi.x+roi.w, roi.y)) return 'ne';
-    if(near(roi.x, roi.y+roi.h)) return 'sw';
-    if(near(roi.x+roi.w, roi.y+roi.h)) return 'se';
-    if(inBox) return 'move';
-    return null;
-  }
-  function startDrag(ev){
-    if(!roi.show) return;
-    const p=norm(ev);
-    const mode=hit(p.nx,p.ny);
-    if(!mode) return;
-    ev.preventDefault && ev.preventDefault();
-    drag={mode:mode, ox:p.nx, oy:p.ny, rx:roi.x, ry:roi.y, rw:roi.w, rh:roi.h};
-  }
-  function moveDrag(ev){
-    if(!drag) return;
-    const p=norm(ev);
-    let dx=p.nx-drag.ox, dy=p.ny-drag.oy;
-    const minW=0.08, minH=0.08;
-    if(drag.mode==='move'){
-      roi.x = Math.max(0, Math.min(1 - drag.rw, drag.rx + dx));
-      roi.y = Math.max(0, Math.min(1 - drag.rh, drag.ry + dy));
-    }else{
-      let x=drag.rx, y=drag.ry, w=drag.rw, h=drag.rh;
-      if(drag.mode.indexOf('n')>=0){ y = Math.max(0, Math.min(drag.ry+dy, drag.ry+drag.rh-minH)); h = (drag.ry+drag.rh)-y; }
-      if(drag.mode.indexOf('s')>=0){ h = Math.max(minH, Math.min(1-drag.ry, drag.rh+dy)); }
-      if(drag.mode.indexOf('w')>=0){ x = Math.max(0, Math.min(drag.rx+dx, drag.rx+drag.rw-minW)); w = (drag.rx+drag.rw)-x; }
-      if(drag.mode.indexOf('e')>=0){ w = Math.max(minW, Math.min(1-drag.rx, drag.rw+dx)); }
-      roi.x=x; roi.y=y; roi.w=w; roi.h=h;
-    }
-    drawROI();
-    ev.preventDefault && ev.preventDefault();
-  }
+  let drag=null;
+  function drawROI(){ if(!octx) return; octx.clearRect(0,0,overlay.width,overlay.height); if(!roi.show){ overlay.style.pointerEvents='none'; return; } overlay.style.pointerEvents='auto'; const x=roi.x*overlay.width, y=roi.y*overlay.height, w=roi.w*overlay.width, h=roi.h*overlay.height; octx.save(); octx.strokeStyle='rgba(255,255,255,0.85)'; octx.lineWidth=2; octx.setLineDash([6,4]); octx.strokeRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h)); octx.setLineDash([]); const s=10; const pts=[ [x,y,'nw'], [x+w,y,'ne'], [x,y+h,'sw'], [x+w,y+h,'se'] ]; octx.fillStyle='rgba(34,197,94,0.9)'; octx.strokeStyle='#000'; octx.lineWidth=1; for(const p of pts){ octx.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s); octx.strokeRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s); } octx.restore(); }
+  function norm(ev){ const rect=overlay.getBoundingClientRect(); const pt=('touches' in ev && ev.touches.length)?ev.touches[0]:ev; let nx=(pt.clientX-rect.left)/rect.width, ny=(pt.clientY-rect.top)/rect.height; nx=Math.max(0,Math.min(1,nx)); ny=Math.max(0,Math.min(1,ny)); return {nx,ny}; }
+  function hit(nx,ny){ const m=0.02; const inBox=nx>=roi.x && ny>=roi.y && nx<=roi.x+roi.w && ny<=roi.y+roi.h; const near=(ax,ay)=>Math.abs(nx-ax)<=m && Math.abs(ny-ay)<=m; if(near(roi.x,roi.y))return'nw'; if(near(roi.x+roi.w,roi.y))return'ne'; if(near(roi.x,roi.y+roi.h))return'sw'; if(near(roi.x+roi.w,roi.y+roi.h))return'se'; if(inBox)return'move'; return null; }
+  function startDrag(ev){ if(!roi.show) return; const p=norm(ev); const mode=hit(p.nx,p.ny); if(!mode) return; ev.preventDefault && ev.preventDefault(); drag={mode:mode, ox:p.nx, oy:p.ny, rx:roi.x, ry:roi.y, rw:roi.w, rh:roi.h}; }
+  function moveDrag(ev){ if(!drag) return; const p=norm(ev); let dx=p.nx-drag.ox, dy=p.ny-drag.oy; const minW=0.08, minH=0.08; if(drag.mode==='move'){ roi.x=Math.max(0,Math.min(1-drag.rw,drag.rx+dx)); roi.y=Math.max(0,Math.min(1-drag.rh,drag.ry+dy)); } else { let x=drag.rx, y=drag.ry, w=drag.rw, h=drag.rh; if(drag.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(drag.ry+dy,drag.ry+drag.rh-minH)); h=(drag.ry+drag.rh)-y; } if(drag.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-drag.ry,drag.rh+dy)); } if(drag.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(drag.rx+dx,drag.rx+drag.rw-minW)); w=(drag.rx+drag.rw)-x; } if(drag.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-drag.rx,drag.rw+dx)); } roi.x=x; roi.y=y; roi.w=w; roi.h=h; } drawROI(); ev.preventDefault && ev.preventDefault(); }
   function endDrag(ev){ if(!drag) return; drag=null; ev.preventDefault && ev.preventDefault(); }
+  overlay.addEventListener('mousedown', startDrag); overlay.addEventListener('mousemove', moveDrag); window.addEventListener('mouseup', endDrag); overlay.addEventListener('touchstart', startDrag, {passive:false}); overlay.addEventListener('touchmove', moveDrag, {passive:false}); overlay.addEventListener('touchend', endDrag, {passive:false}); overlay.addEventListener('touchcancel', endDrag, {passive:false});
 
-  overlay.addEventListener('mousedown', startDrag);
-  overlay.addEventListener('mousemove', moveDrag);
-  window.addEventListener('mouseup', endDrag);
-  overlay.addEventListener('touchstart', startDrag, {passive:false});
-  overlay.addEventListener('touchmove', moveDrag, {passive:false});
-  overlay.addEventListener('touchend', endDrag, {passive:false});
-  overlay.addEventListener('touchcancel', endDrag, {passive:false});
-
-  // ---------- Table render / actions ----------
   const tbody=$('#logBody');
   function render(){
     tbody.innerHTML='';
@@ -381,7 +340,46 @@
   $('#addManualBtn').addEventListener('click', function(){ const v=manualInput && manualInput.value ? manualInput.value.trim() : ''; if(v){ upsert(v,'text','manual/keyboard'); manualInput.value=''; } });
   if(manualInput){ manualInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); const v=manualInput.value.trim(); if(v){ upsert(v,'text','manual/keyboard'); manualInput.value=''; } } }); }
 
-  // ---------- Exporters ----------
+  const EXCEL_MAX=32760;
+  function clampCell(s){
+    s = (s==null?'':String(s));
+    if(s.length>EXCEL_MAX) return s.slice(0,EXCEL_MAX-1)+'…';
+    return s;
+  }
+  function rowsForExport(includePhotoName){
+    return data.map(function(r){
+      const photoName = r.photo ? ('photo-'+(r.id||'')+'.jpg') : '';
+      return {
+        "Content": clampCell(r.content),
+        "Format": clampCell(r.format),
+        "Source": clampCell(r.source),
+        "Date": clampCell(r.date||""),
+        "Time": clampCell(r.time||""),
+        "Weight": clampCell(r.weight||""),
+        "Photo": includePhotoName ? photoName : (r.photo||""),
+        "Count": r.count,
+        "Notes": clampCell(r.notes||""),
+        "Timestamp": clampCell(r.timestamp||"")
+      };
+    });
+  }
+  function rowsForCsv(){
+    return data.map(function(r){
+      return {
+        "Content": r.content,
+        "Format": r.format,
+        "Source": r.source,
+        "Date": r.date||"",
+        "Time": r.time||"",
+        "Weight": r.weight||"",
+        "Photo": r.photo||"",
+        "Count": r.count,
+        "Notes": r.notes||"",
+        "Timestamp": r.timestamp||""
+      };
+    });
+  }
+
   const Zip=(function(){
     function crcTable(){ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++){ c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); } t[n]=c>>>0; } return t; }
     const TBL=crcTable();
@@ -413,21 +411,51 @@
     function strToU8(s){ return strU8(s); }
     return { make, strToU8 };
   })();
-  function rowsForExport(){ return data.map(function(r){return {"Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||"","Time":r.time||"","Weight":r.weight||"","Photo":r.photo||"","Count":r.count,"Notes":r.notes||"","Timestamp":r.timestamp||""};}); }
-  function xlsxBuiltIn(rows,sheetName){sheetName=sheetName||'Log';function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}function colRef(n){let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}const cols=rows.length?Object.keys(rows[0]):[];const sheet=['<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>','<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>'];sheet.push('<row r=\"1\">');cols.forEach(function(c,i){sheet.push('<c r=\"'+colRef(i+1)+'1\" t=\"inlineStr\"><is><t>'+escXml(c)+'</t></is></c>');});sheet.push('</row>');rows.forEach(function(r,idx){const rr=idx+2;sheet.push('<row r=\"'+rr+'\">');cols.forEach(function(c,i){const v=(r[c]==null?'':String(r[c]));sheet.push('<c r=\"'+colRef(i+1)+rr+'\" t=\"inlineStr\"><is><t>'+escXml(v)+'</t></is></c>');});sheet.push('</row>');});sheet.push('</sheetData></worksheet>');const sheetXml=sheet.join('');const parts=[{name:'[Content_Types].xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\\n<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\\n<Default Extension=\"xml\" ContentType=\"application/xml\"/>\\n<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>\\n<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\\n<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>\\n<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>\\n</Types>'},{name:'_rels/.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>\\n  <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/>\\n  <Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" Target=\"docProps/app.xml\"/>\\n</Relationships>'},{name:'docProps/core.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},{name:'docProps/app.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>QR Logger</Application></Properties>'},{name:'xl/_rels/workbook.xml.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\\n</Relationships>'},{name:'xl/workbook.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\\n  <sheets><sheet name=\"'+escapeAttr(sheetName)+'\" sheetId=\"1\" r:id=\"rId1\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"/></sheets>\\n</workbook>'},{name:'xl/worksheets/sheet1.xml',text:sheetXml}];const files=parts.map(function(p){return {name:p.name,bytes:Zip.strToU8(p.text)};});return Zip.make(files);}
-  function exportXlsx(){ if(window.XLSX){ const ws=window.XLSX.utils.json_to_sheet(rowsForExport()); const wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); const out = window.XLSX.write(wb, {bookType:'xlsx', type:'array'}); const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); download(blob, 'qr-log-'+ts()+'.xlsx'); } else { const blob=xlsxBuiltIn(rowsForExport(),'Log'); download(blob, 'qr-log-'+ts()+'.xlsx'); } }
-  function exportCsv(){ const headers=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; const rows=[headers].concat(data.map(function(r){return [r.content,r.format,r.source,r.date||'',r.time||'',r.weight||'',r.photo||'',r.count,r.notes||'',r.timestamp||''];})); const csv=rows.map(function(row){return row.map(function(f){const s=((f==null)?'':String(f)).replace(/\"/g,'\"\"');return /[\",\\n]/.test(s)?('\"'+s+'\"'):s;}).join(',');}).join('\\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); download(blob, 'qr-log-'+ts()+'.csv'); }
-  function exportZip(){ const headers=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; const rows=[headers].concat(data.map(function(r){return [r.content,r.format,r.source,r.date||'',r.time||'',r.weight||'',r.photo?('photo-'+(r.id||'')+'.jpg'):'',r.count,r.notes||'',r.timestamp||''];})); const csv=rows.map(function(row){return row.map(function(f){const s=(f==null? '' : String(f)).replace(/\"/g,'\"\"');return /[\",\\n]/.test(s)?('\"'+s+'\"'):s;}).join(',');}).join('\\n'); const files=[{name:'qr-log-'+ts()+'.csv',bytes:Zip.strToU8(csv)}]; for(let i=0;i<data.length;i++){ const r=data[i]; if(r.photo && r.photo.startsWith('data:image')){ try{ const b64=r.photo.split(',')[1]; const bytes=Uint8Array.from(atob(b64), c=>c.charCodeAt(0)); files.push({name:'photo-'+(r.id||('row'+i))+'.jpg', bytes:bytes}); }catch(e){} } } const blob=Zip.make(files); download(blob, 'qr-log-bundle-'+ts()+'.zip'); }
+
+  function exportXlsx(){
+    const rows = rowsForExport(true);
+    if(window.XLSX){
+      const ws=window.XLSX.utils.json_to_sheet(rows);
+      const wb=window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Log');
+      const out = window.XLSX.write(wb, {bookType:'xlsx', type:'array'});
+      const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      download(blob, 'qr-log-'+ts()+'.xlsx');
+    } else {
+      const blob=xlsxBuiltIn(rows,'Log');
+      download(blob, 'qr-log-'+ts()+'.xlsx');
+    }
+  }
+  function exportCsv(){
+    const rows = rowsForCsv();
+    const headers=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"];
+    const r2=[headers].concat(rows.map(function(r){return [r.Content||r.content||'', r.Format||r.format||'', r.Source||r.source||'', r.Date||r.date||'', r.Time||r.time||'', r.Weight||r.weight||'', r.Photo||r.photo||'', r.Count||r.count||'', r.Notes||r.notes||'', r.Timestamp||r.timestamp||''];}));
+    const csv=r2.map(function(row){return row.map(function(f){const s=((f==null)?'':String(f)).replace(/\"/g,'\"\"');return /[\",\\n]/.test(s)?('\"'+s+'\"'):s;}).join(',');}).join('\\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); download(blob, 'qr-log-'+ts()+'.csv');
+  }
+  function exportZip(){
+    const headers=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"];
+    const rows = data.map(function(r){ return [r.content,r.format,r.source,r.date||'',r.time||'',r.weight||'', r.photo?('photo-'+(r.id||'')+'.jpg'):'', r.count, r.notes||'', r.timestamp||'']; });
+    const csv=[headers].concat(rows).map(function(row){return row.map(function(f){const s=(f==null? '' : String(f)).replace(/\"/g,'\"\"');return /[\",\\n]/.test(s)?('\"'+s+'\"'):s;}).join(',');}).join('\\n');
+    const files=[{name:'qr-log-'+ts()+'.csv',bytes:Zip.strToU8(csv)}];
+    for(let i=0;i<data.length;i++){
+      const r=data[i];
+      if(r.photo && r.photo.startsWith('data:image')){
+        try{ const b64=r.photo.split(',')[1]; const bytes=Uint8Array.from(atob(b64), c=>c.charCodeAt(0)); files.push({name:'photo-'+(r.id||('row'+i))+'.jpg', bytes:bytes}); }catch(e){}
+      }
+    }
+    const blob=Zip.make(files); download(blob, 'qr-log-bundle-'+ts()+'.zip');
+  }
   const ts=()=> new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
   function download(blob, name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500); }
 
-  // ---------- Importers ----------
+  function xlsxBuiltIn(rows,sheetName){sheetName=sheetName||'Log';function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}function colRef(n){let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}const cols=rows.length?Object.keys(rows[0]):[];const sheet=['<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>','<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>'];sheet.push('<row r=\"1\">');cols.forEach(function(c,i){sheet.push('<c r=\"'+colRef(i+1)+'1\" t=\"inlineStr\"><is><t>'+escXml(c)+'</t></is></c>');});sheet.push('</row>');rows.forEach(function(r,idx){const rr=idx+2;sheet.push('<row r=\"'+rr+'\">');cols.forEach(function(c,i){const v=(r[c]==null?'':String(r[c]));sheet.push('<c r=\"'+colRef(i+1)+rr+'\" t=\"inlineStr\"><is><t>'+escXml(v)+'</t></is></c>');});sheet.push('</row>');});sheet.push('</sheetData></worksheet>');const sheetXml=sheet.join('');const parts=[{name:'[Content_Types].xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\\n<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\\n<Default Extension=\"xml\" ContentType=\"application/xml\"/>\\n<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>\\n<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\\n<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>\\n<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>\\n</Types>'},{name:'_rels/.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>\\n  <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/>\\n  <Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" Target=\"docProps/app.xml\"/>\\n</Relationships>'},{name:'docProps/core.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},{name:'docProps/app.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>QR Logger</Application></Properties>'},{name:'xl/_rels/workbook.xml.rels',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<Relationships xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\\n  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\\n</Relationships>'},{name:'xl/workbook.xml',text:'<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\\n  <sheets><sheet name=\"'+escapeAttr(sheetName)+'\" sheetId=\"1\" r:id=\"rId1\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"/></sheets>\\n</workbook>'},{name:'xl/worksheets/sheet1.xml',text:sheetXml}];const files=parts.map(function(p){return {name:p.name,bytes:Zip.strToU8(p.text)};});return Zip.make(files);}
+
   $('#importFileBtn').addEventListener('click', function(){ if(fileInput) fileInput.click(); });
   fileInput.addEventListener('change', function(e){ const file=e.target.files[0]; if(!file) return; const ext=(file.name.split('.').pop()||'').toLowerCase(); if(ext==='csv'){ importCsv(file); } else { importXlsx(file); } e.target.value=''; });
   function importCsv(file){ file.text().then(function(text){ const rows=text.split(/\\r?\\n/).map(function(r){ return r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/); }); const body=rows.slice(1); for(let i=0;i<body.length;i++){ const cols=body[i]; if(!cols.length||!cols[0])continue; upsert(cols[0].replace(/\\"/g,'\"'), cols[1]||'', cols[2]||'import'); const last=data[0]; last.date=cols[3]||last.date; last.time=cols[4]||last.time; last.weight=cols[5]||''; last.photo=''; last.count=parseInt(cols[7]||'1',10); last.notes=(cols[8]||'').replace(/^\"|\"$/g,''); last.timestamp=cols[9]||last.timestamp; } save(); render(); setStatus('Imported CSV.'); }).catch(function(err){ setStatus('CSV import failed: '+(err.message||err)); }); }
   function importXlsx(file){ if(!window.XLSX){ setStatus('XLSX import needs SheetJS. Populate /vendor.'); return; } const reader=new FileReader(); reader.onload=function(e){ const u8=new Uint8Array(e.target.result); const wb = window.XLSX.read(u8, {type:'array'}); const ws = wb.Sheets[wb.SheetNames[0]]; const json = window.XLSX.utils.sheet_to_json(ws, {defval:''}); for(let i=0;i<json.length;i++){ const r=json[i]; upsert(String(r.Content||r.content||''), String(r.Format||r.format||''), String(r.Source||r.source||'import')); const last=data[0]; last.date=String(r.Date||''); last.time=String(r.Time||''); last.weight=String(r.Weight||''); last.notes=String(r.Notes||''); last.timestamp=String(r.Timestamp||''); } save(); render(); setStatus('Imported XLSX.'); }; reader.readAsArrayBuffer(file); }
 
-  // Wire buttons for export & clear
   if(exportXlsxBtn) exportXlsxBtn.addEventListener('click', exportXlsx);
   if(exportCsvBtn) exportCsvBtn.addEventListener('click', exportCsv);
   if(exportZipBtn) exportZipBtn.addEventListener('click', exportZip);
@@ -461,7 +489,6 @@
   window.addEventListener('resize', drawROI);
   function beep(){ try{ const a=new AudioContext(), o=a.createOscillator(), g=a.createGain(); o.type='square'; o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.05,a.currentTime); o.start(); setTimeout(()=>{o.stop(); a.close();},90);}catch(e){} }
 
-  // Sync overlay interactivity with ROI visibility
   ocrToggleBtn.addEventListener('click', function(){
     roi.show=!roi.show;
     overlay.style.pointerEvents = roi.show ? 'auto' : 'none';
