@@ -1,4 +1,4 @@
-// remote.js — stub; add your signaling to enable remote camera
+// remote.js — stub; wire to your signaling/relay when ready
 export const Remote = (function(){ return { init(){ /* add Firebase/WebSocket signaling here */ } }; })();
 document.addEventListener('DOMContentLoaded', () => {
   const status = document.getElementById('remoteStatus');

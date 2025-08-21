@@ -1,1 +1,34 @@
-<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>QR Remote</title></head><body><p>Use the main app and select "Remote camera". Add signaling in remote.js to enable pairing.</p></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>QR-Reader Remote</title>
+  <meta name="theme-color" content="#0f172a"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <header><div class="wrap"><h1>QR-Reader — Remote Camera</h1><div class="subtitle">Pair with a host using your signaling of choice.</div></div></header>
+  <main class="wrap">
+    <div class="card"><div class="content">
+      <p class="muted">This is a placeholder page for a remote camera client. Implement your signaling (WebSocket/Firebase) in <code>remote.js</code>.</p>
+      <div class="video-wrap"><video id="video" playsinline webkit-playsinline muted></video></div>
+      <div class="controls" style="margin-top:8px">
+        <button id="startRemote" type="button" class="primary">Start Camera</button>
+        <button id="stopRemote" type="button" class="secondary">Stop</button>
+      </div>
+    </div></div>
+  </main>
+  <script type="module">
+  document.getElementById('startRemote').addEventListener('click', async ()=>{
+    try{
+      const s = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false});
+      const v = document.getElementById('video'); v.srcObject=s; await v.play();
+    }catch(e){ alert('Remote camera error: '+(e.message||e)); }
+  });
+  document.getElementById('stopRemote').addEventListener('click', ()=>{
+    const v = document.getElementById('video'); const s=v.srcObject; if(s){ s.getTracks().forEach(t=>t.stop()); v.srcObject=null; }
+  });
+  </script>
+</body>
+</html>

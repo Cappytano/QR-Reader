@@ -1,36 +1,40 @@
-# QR-Reader — v7.1.4
+# QR-Reader — v7.1.5 (Core only)
 
-**Fixes**
-- OCR weight automatically normalized to **grams (numeric)**. Inputs like `2.1kg`, `0.45 lb`, `10oz`, `123g` are stored as grams **without units**.
-- Added a bottom-right **toast confirmation** when OCR/HID/BLE weight capture completes.
-- **Excel export cannot contain > 32,767 chars per cell** (Excel limitation). The Photo column is now exported as a **filename** (e.g., `photo-<id>.jpg`) and long values are truncated. Use **ZIP** export to get actual JPEGs with a CSV.
+This package includes all non-vendor files you need to deploy (GitHub Pages or localhost).
+**/vendor** libs must be added separately for scanning/OCR/Excel.
 
-Engine order: **BarcodeDetector → zxing-wasm → jsQR**.
+## Files
+- index.html
+- styles.css
+- app.js
+- remote.html
+- remote.js
+- manifest.webmanifest
+- sw.js
+- server.js
+- package.json
+- .nojekyll
+- icons/icon-192.png
+- icons/icon-512.png
 
-## One-time vendor step (prevents 404s)
-Populate `/vendor` locally, then commit:
+## Expected `/vendor`
 ```
-Windows PowerShell: .\get-vendor.ps1
-macOS/Linux:       bash get-vendor.sh
-```
-This will create:
-```
-vendor/zxing-wasm-reader.iife.js
-vendor/zxing_reader.wasm
-vendor/jsQR.js
-vendor/tesseract.min.js
-vendor/worker.min.js
-vendor/tesseract-core/tesseract-core.wasm.js
-vendor/tesseract-core/tesseract-core.wasm.wasm
-vendor/lang-data/eng.traineddata.gz
-vendor/xlsx.full.min.js
+vendor/
+  zxing-wasm-reader.iife.js
+  zxing_reader.wasm
+  jsQR.js
+  tesseract.min.js
+  worker.min.js
+  tesseract-core/
+    tesseract-core.wasm.js
+    tesseract-core.wasm
+  xlsx.full.min.js
+  lang-data/
+    eng.traineddata.gz
 ```
 
-## Local dev
-```
+## Run locally
+```bash
 npm i
 npm start   # http://localhost:8080
 ```
-
-## GitHub Pages
-Push all files (including `/vendor`). Enable Pages → deploy from branch root.
