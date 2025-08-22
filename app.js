@@ -1,5 +1,5 @@
 
-// QR-Reader v7.1.7 CORE (no vendor) — ROI overlay fixed (z-index, DPR, resize)
+// QR-Reader v7.1.9 CORE (no vendor) — OCR default-on & live status
 (function(){
   'use strict';
 
@@ -12,16 +12,18 @@
   var delaySecInput=$('#delaySec'), scaleModeSel=$('#scaleMode');
   var ocrToggleBtn=$('#ocrToggle'), connectHIDBtn=$('#connectHID'), connectBLEBtn=$('#connectBLE');
   var exportXlsxBtn=$('#exportXlsx'), exportCsvBtn=$('#exportCsv'), exportZipBtn=$('#exportZip'), clearBtn=$('#clearBtn');
-  var toastEl=$('#toast');
+  var toastEl=$('#toast'), ocrStatus=$('#ocrStatus'), testOCRBtn=$('#testOCR');
 
   var stream=null, scanning=false, detector=null;
-  var data=[]; var STORAGE_KEY='qrLoggerV7';
+  var data=[]; var STORAGE_KEY='qrLoggerV7', PREF_KEY='qrPrefsV1';
   var cooldownUntil=0, scanTimer=null;
   var roi = { x:0.58, y:0.58, w:0.40, h:0.38, show:false, hasText:false };
   var ocrPulseTimer=null;
   var seenEver = new Set();
+  var everConnectedScale=false;
 
   function setStatus(t){ if(statusEl){ statusEl.textContent=t||''; } }
+  function setOCRStatus(t){ if(ocrStatus){ ocrStatus.textContent='OCR: '+t; } }
   function toast(t){
     if(!toastEl) return;
     toastEl.textContent = t;
@@ -30,7 +32,20 @@
     toastEl._t = setTimeout(function(){ toastEl.style.display='none'; }, 1800);
   }
   function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:data,seen:Array.from(seenEver)})); }catch(e){} }
-  function load(){ try{ var raw=localStorage.getItem(STORAGE_KEY)||'{}'; var p=JSON.parse(raw); data=p.rows||[]; (p.seen||[]).forEach(function(v){seenEver.add(v)}); }catch(e){ data=[]; } }
+  function savePrefs(obj){
+    try { var p=loadPrefs(); for(var k in obj){ p[k]=obj[k]; } localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch(e){}
+  }
+  function loadPrefs(){
+    try { return JSON.parse(localStorage.getItem(PREF_KEY)||'{}'); } catch(e){ return {}; }
+  }
+  function load(){
+    try{
+      var raw=localStorage.getItem(STORAGE_KEY)||'{}';
+      var p=JSON.parse(raw);
+      data=p.rows||[];
+      (p.seen||[]).forEach(function(v){seenEver.add(v)});
+    }catch(e){ data=[]; }
+  }
   function esc(s){ if(s==null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function ts(){ return new Date().toISOString().slice(0,19).replace(/[:T]/g,'-'); }
 
@@ -115,6 +130,7 @@
     if(scanTimer) clearTimeout(scanTimer);
     try{ octx.clearRect(0,0,overlay.width,overlay.height); }catch(_e){}
     if(ocrPulseTimer) clearInterval(ocrPulseTimer);
+    setOCRStatus('Off');
   }
 
   function initScanner(){
@@ -191,7 +207,7 @@
     scanTimer=setTimeout(loopJsQR,160);
   }
 
-  // === ROI drawing (with subtle fill & handles), uses CSS px thanks to setTransform ===
+  // === ROI drawing (with subtle fill & handles), uses CSS px (setTransform applied) ===
   function drawROI(){
     if(!octx) return;
     octx.clearRect(0,0,overlay.width,overlay.height);
@@ -219,16 +235,42 @@
     octx.restore();
   }
 
+  // Lightweight preprocessing to help Tesseract
+  function preprocessCanvas(src){
+    var c=document.createElement('canvas'); c.width=src.width; c.height=src.height;
+    var ctx=c.getContext('2d');
+    ctx.drawImage(src,0,0);
+    try{
+      var img=ctx.getImageData(0,0,c.width,c.height);
+      var d=img.data, n=d.length;
+      // grayscale + simple contrast/threshold
+      var thresh=160, contrast=1.2;
+      for(var i=0;i<n;i+=4){
+        var y = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+        y = (y-128)*contrast + 128;
+        var v = y>thresh ? 255 : 0;
+        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+      }
+      ctx.putImageData(img,0,0);
+    }catch(e){ /* ignore */ }
+    return c;
+  }
+
   function ensureTesseract(){
-    if(!(window.Tesseract&&window.Tesseract.createWorker)) return Promise.resolve(null);
+    if(!(window.Tesseract&&window.Tesseract.createWorker)){ setOCRStatus('No engine'); return Promise.resolve(null); }
     if(ensureTesseract._p) return ensureTesseract._p;
+    setOCRStatus('Loading…');
     ensureTesseract._p = window.Tesseract.createWorker({
       workerPath:'vendor/worker.min.js',
       corePath:'vendor/tesseract-core/tesseract-core.wasm.js',
       langPath:'vendor/lang-data'
     }).then(function(w){
-      return w.load().then(function(){return w.loadLanguage('eng');}).then(function(){return w.initialize('eng');}).then(function(){ try{ return w.setParameters({tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',preserve_interword_spaces:'1'}).then(function(){return w;}); }catch(e){ return w; } });
-    }).catch(function(){ ensureTesseract._p=null; return null; });
+      return w.load()
+        .then(function(){return w.loadLanguage('eng');})
+        .then(function(){return w.initialize('eng');})
+        .then(function(){ try{ return w.setParameters({tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',preserve_interword_spaces:'1'}).then(function(){return w;}); }catch(e){ return w; } })
+        .then(function(w){ setOCRStatus('Ready'); return w; });
+    }).catch(function(e){ console.warn('Tesseract init failed', e); setOCRStatus('Missing vendor'); ensureTesseract._p=null; return null; });
     return ensureTesseract._p;
   }
 
@@ -240,6 +282,13 @@
     if(u==='kg') g=v*1000; else if(u==='lb'||u==='lbs') g=v*453.59237; else if(u==='oz') g=v*28.349523125;
     var s=Math.round(g*100)/100; return (Math.abs(s-Math.round(s))<1e-9)?String(Math.round(s)):String(s);
   }
+  function getRoiSnapshot(){
+    var vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh) return null;
+    var sx=Math.floor(vw*roi.x), sy=Math.floor(vh*roi.y), sw=Math.floor(vw*roi.w), sh=Math.floor(vh*roi.h);
+    var c=document.createElement('canvas'); c.width=Math.max(1,sw); c.height=Math.max(1,sh); c.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  }
+
   function captureWeightAndPhoto(row){
     if(!row) return;
     try{
@@ -251,31 +300,41 @@
     var mode=(scaleModeSel&&scaleModeSel.value)||'none';
     if(mode==='ocr'){ ensureTesseract().then(function(w){
       if(!w){ setStatus('Tesseract not loaded (add vendor files).'); return; }
-      var vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh){ setStatus('OCR: video not ready'); return; }
-      var sx=Math.floor(vw*roi.x), sy=Math.floor(vh*roi.y), sw=Math.floor(vw*roi.w), sh=Math.floor(vh*roi.h);
-      var c=document.createElement('canvas'); c.width=Math.max(1,sw); c.height=Math.max(1,sh); c.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
-      w.recognize(c).then(function(res){ var txt=res&&res.data&&res.data.text?res.data.text:''; var grams=toGramsString(txt); if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); } else { setStatus('OCR: no numeric weight found'); } });
+      var snap=getRoiSnapshot(); if(!snap){ setStatus('OCR: video not ready'); return; }
+      var pre=preprocessCanvas(snap);
+      w.recognize(pre).then(function(res){ var txt=res&&res.data&&res.data.text?res.data.text:''; var grams=toGramsString(txt); if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); } else { setStatus('OCR: no numeric weight found'); } });
     }); }
     save(); render();
   }
+
   function startOcrPulse(){
     if(ocrPulseTimer) clearInterval(ocrPulseTimer);
     ocrPulseTimer=setInterval(function(){
-      if(!(roi.show && scaleModeSel && scaleModeSel.value==='ocr')){ roi.hasText=false; drawROI(); return; }
-      if(!(video && video.readyState>=2)){ roi.hasText=false; drawROI(); return; }
+      if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; drawROI(); setOCRStatus('On (idle)'); return; }
+      if(!(video && video.readyState>=2)){ roi.hasText=false; drawROI(); setOCRStatus('Video not ready'); return; }
       ensureTesseract().then(function(w){
         if(!w){ roi.hasText=false; drawROI(); return; }
         try{
-          var vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh){ roi.hasText=false; drawROI(); return; }
-          var sx=Math.floor(vw*roi.x), sy=Math.floor(vh*roi.y), sw=Math.floor(vw*roi.w), sh=Math.floor(vh*roi.h);
-          var c=document.createElement('canvas'); c.width=Math.max(1,sw); c.height=Math.max(1,sh); c.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
-          w.recognize(c).then(function(res){ var txt=(res&&res.data&&res.data.text)||''; var has=/\d/.test(txt); roi.hasText=!!has; drawROI(); if(has){ setStatus('OCR live: text in ROI'); } });
-        }catch(e){ roi.hasText=false; drawROI(); }
+          var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; drawROI(); return; }
+          var pre=preprocessCanvas(snap);
+          w.recognize(pre).then(function(res){
+            var txt=(res&&res.data&&res.data.text)||'';
+            var has=/\S/.test(txt);
+            roi.hasText=!!has;
+            drawROI();
+            setOCRStatus(has?'Text':'On');
+          });
+        }catch(e){ roi.hasText=false; drawROI(); setOCRStatus('On'); }
       });
-    }, 900);
+    }, 1200);
   }
 
-  function drawReady(){ setStatus('Ready. Engines: BD → jsQR. Populate /vendor for OCR/XLSX/ZIP.'); }
+  function drawReady(){ setStatus('Ready. Engines: BD → jsQR. Add /vendor for OCR/XLSX/ZIP.'); }
+
+  function ensureROIOn(){
+    if(!roi.show){ roi.show=true; sizeOverlay(); drawROI(); }
+    startOcrPulse();
+  }
 
   function ocrToggle(){
     roi.show=!roi.show;
@@ -287,6 +346,7 @@
     } else {
       if(ocrPulseTimer) clearInterval(ocrPulseTimer);
       roi.hasText=false;
+      setOCRStatus('Off');
       drawROI();
     }
   }
@@ -341,89 +401,37 @@
   function exportCsv(){ var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; var out=[cols]; for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var v=r[cols[j]]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); } var csv=out.map(function(a){return a.join(',')}).join('\\n'); download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv'); }
 
   function xlsxBuiltIn(rows,sheetName){
-  function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
-  function colRef(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
-  function attr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}
-  var cols=rows.length?Object.keys(rows[0]):[];
-
-  var sheet=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>','<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'];
-  sheet.push('<row r="1">');
-  for(var i=0;i<cols.length;i++){ var c=cols[i]; sheet.push('<c r="'+colRef(i+1)+'1" t="inlineStr"><is><t>'+escXml(c)+'</t></is></c>'); }
-  sheet.push('</row>');
-  for(var ri=0;ri<rows.length;ri++){ var r=rows[ri]; var rr=ri+2; sheet.push('<row r="'+rr+'">'); for(var ci=0;ci<cols.length;ci++){ var cc=cols[ci]; var v=(r[cc]==null?'':String(r[cc])); if(v.length>32760) v=v.slice(0,32759)+'…'; sheet.push('<c r="'+colRef(ci+1)+rr+'" t="inlineStr"><is><t>'+escXml(v)+'</t></is></c>'); } sheet.push('</row>'); }
-  sheet.push('</sheetData></worksheet>');
-
-  var parts=[
-    {'name':'[Content_Types].xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n<Default Extension="xml" ContentType="application/xml"/>\n<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\n<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\n<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\n</Types>'},
-    {'name':'_rels/.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships" Target="docProps/app.xml"/>\n</Relationships>'},
-    {'name':'docProps/core.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\n</cp:coreProperties>'},
-    {'name':'docProps/app.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>QR Logger</Application></Properties>'},
-    {'name':'xl/_rels/workbook.xml.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\n</Relationships>'},
-    {'name':'xl/workbook.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n  <sheets><sheet name="'+attr(sheetName)+'" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>\n</workbook>'},
-    {'name':'xl/worksheets/sheet1.xml','text':sheet.join('')}
-  ];
-
-  function strU8(s){ return new TextEncoder().encode(String(s)); }
-  function concat(arrs){ var len=0; for(var i=0;i<arrs.length;i++){ len+=arrs[i].length; } var out=new Uint8Array(len),p=0; for(var j=0;j<arrs.length;j++){ out.set(arrs[j],p); p+=arrs[j].length; } return out; }
-  function crc32(data){ var c=~0>>>0; for(var i=0;i<data.length;i++){ c=c^data[i]; for(var k=0;k<8;k++){ c=(c>>>1) ^ (0xEDB88320 & (-(c & 1))); } } return (~c)>>>0; }
-
-  function fileRec(name, bytes){
-    var head=[0x50,0x4b,0x03,0x04, 20,0, 0,0, 0,0, 0,0, 0,0,0,0, 0,0,0,0, 0,0, 0,0, 0,0];
-    head=Uint8Array.from(head);
-    var nm=new TextEncoder().encode(name);
-    var crc=crc32(bytes);
-    var csz=bytes.length, usz=bytes.length;
-    head[14]=crc&255; head[15]=(crc>>8)&255; head[16]=(crc>>16)&255; head[17]=(crc>>24)&255;
-    head[18]=csz&255; head[19]=(csz>>8)&255; head[20]=(csz>>16)&255; head[21]=(csz>>24)&255;
-    head[22]=usz&255; head[23]=(usz>>8)&255; head[24]=(usz>>16)&255; head[25]=(usz>>24)&255;
-    head[26]=nm.length&255; head[27]=(nm.length>>8)&255; head[28]=0; head[29]=0;
-    return concat([head,nm,bytes]);
+    function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/<//g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
+    function colRef(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
+    function attr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}
+    var cols=rows.length?Object.keys(rows[0]):[];
+    var sheet=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>','<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'];
+    sheet.push('<row r="1">'); for(var i=0;i<cols.length;i++){ var c=cols[i]; sheet.push('<c r="'+colRef(i+1)+'1" t="inlineStr"><is><t>'+escXml(c)+'</t></is></c>'); } sheet.push('</row>');
+    for(var ri=0;ri<rows.length;ri++){ var r=rows[ri]; var rr=ri+2; sheet.push('<row r="'+rr+'">'); for(var ci=0;ci<cols.length;ci++){ var cc=cols[ci]; var v=(r[cc]==null?'':String(r[cc])); if(v.length>32760) v=v.slice(0,32759)+'…'; sheet.push('<c r="'+colRef(ci+1)+rr+'" t="inlineStr"><is><t>'+escXml(v)+'</t></is></c>'); } sheet.push('</row>'); }
+    sheet.push('</sheetData></worksheet>');
+    var parts=[
+      {'name':'[Content_Types].xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\\n<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\\n<Default Extension="xml" ContentType="application/xml"/>\\n<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\\n<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\\n<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\\n<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\\n</Types>'},
+      {'name':'_rels/.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>\\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships" Target="docProps/app.xml"/>\\n</Relationships>'},
+      {'name':'docProps/core.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},
+      {'name':'docProps/app.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>QR Logger</Application></Properties>'},
+      {'name':'xl/_rels/workbook.xml.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\\n</Relationships>'},
+      {'name':'xl/workbook.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\\n  <sheets><sheet name="'+attr(sheetName)+'" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>\\n</workbook>'},
+      {'name':'xl/worksheets/sheet1.xml','text':sheet.join('')}
+    ];
+    function strU8(s){ return new TextEncoder().encode(String(s)); }
+    function concat(arrs){ var len=0; for(var i=0;i<arrs.length;i++){ len+=arrs[i].length; } var out=new Uint8Array(len),p=0; for(var j=0;j<arrs.length;j++){ out.set(arrs[j],p); p+=arrs[j].length; } return out; }
+    function crc32(data){ var c=~0>>>0; for(var i=0;i<data.length;i++){ c=c^data[i]; for(var k=0;k<8;k++){ c=(c>>>1) ^ (0xEDB88320 & (-(c & 1))); } } return (~c)>>>0; }
+    function fileRec(name, bytes){ var head=[0x50,0x4b,0x03,0x04, 20,0, 0,0, 0,0, 0,0, 0,0,0,0, 0,0,0,0, 0,0, 0,0, 0,0]; head=Uint8Array.from(head); var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; head[14]=crc&255; head[15]=(crc>>8)&255; head[16]=(crc>>16)&255; head[17]=(crc>>24)&255; head[18]=csz&255; head[19]=(csz>>8)&255; head[20]=(csz>>16)&255; head[21]=(csz>>24)&255; head[22]=usz&255; head[23]=(usz>>8)&255; head[24]=(usz>>16)&255; head[25]=(usz>>24)&255; head[26]=nm.length&255; head[27]=(nm.length>>8)&255; head[28]=0; head[29]=0; return concat([head,nm,bytes]); }
+    function centralRec(name, bytes){ var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; var h=[0x50,0x4b,0x01,0x02, 0x14,0x00, 0x14,0x00, 0,0, 0,0, crc&255,(crc>>8)&255,(crc>>16)&255,(crc>>24)&255, csz&255,(csz>>8)&255,(csz>>16)&255,(csz>>24)&255, usz&255,(usz>>8)&255,(usz>>16)&255,(usz>>24)&255, nm.length&255,(nm.length>>8)&255, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0]; return concat([Uint8Array.from(h), nm]); }
+    var files=[{'name':'xl/worksheets/sheet1.xml','bytes':strU8(sheet.join(''))},{'name':'xl/_rels/workbook.xml.rels','bytes':strU8(parts[4]['text'])},{'name':'xl/workbook.xml','bytes':strU8(parts[5]['text'])},{'name':'docProps/core.xml','bytes':strU8(parts[2]['text'])},{'name':'docProps/app.xml','bytes':strU8(parts[3]['text'])},{'name':'_rels/.rels','bytes':strU8(parts[1]['text'])},{'name':'[Content_Types].xml','bytes':strU8(parts[0]['text'])}];
+    var offset=0, locals=[], centrals=[];
+    for(var i=0;i<files.length;i++){ var rec=fileRec(files[i].name, files[i].bytes); locals.push(rec); centrals.push(centralRec(files[i].name, files[i].bytes)); offset+=rec.length; }
+    var cen=concat(centrals); var endSig=Uint8Array.from([0x50,0x4b,0x05,0x06, 0,0, 0,0, (files.length)&255,((files.length)>>8)&255, (files.length)&255,((files.length)>>8)&255, cen.length&255,(cen.length>>8)&255,(cen.length>>16)&255,(cen.length>>24)&255, offset&255,(offset>>8)&255,(offset>>16)&255,(offset>>24)&255, 0,0]);
+    var blob=new Blob([concat(locals), cen, endSig],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    return blob;
   }
-  function centralRec(name, bytes){
-    var nm=new TextEncoder().encode(name);
-    var crc=crc32(bytes);
-    var csz=bytes.length, usz=bytes.length;
-    var h=[0x50,0x4b,0x01,0x02, 0x14,0x00, 0x14,0x00, 0,0, 0,0,
-      crc&255,(crc>>8)&255,(crc>>16)&255,(crc>>24)&255,
-      csz&255,(csz>>8)&255,(csz>>16)&255,(csz>>24)&255,
-      usz&255,(usz>>8)&255,(usz>>16)&255,(usz>>24)&255,
-      nm.length&255,(nm.length>>8)&255, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0];
-    return new Uint8Array(h.concat(Array.from(nm)));
-  }
-
-  var files=[
-    {'name':'xl/worksheets/sheet1.xml','bytes':strU8(sheet.join(''))},
-    {'name':'xl/_rels/workbook.xml.rels','bytes':strU8(parts[4]['text'])},
-    {'name':'xl/workbook.xml','bytes':strU8(parts[5]['text'])},
-    {'name':'docProps/core.xml','bytes':strU8(parts[2]['text'])},
-    {'name':'docProps/app.xml','bytes':strU8(parts[3]['text'])},
-    {'name':'_rels/.rels','bytes':strU8(parts[1]['text'])},
-    {'name':'[Content_Types].xml','bytes':strU8(parts[0]['text'])}
-  ];
-
-  var offset=0, locals=[], centrals=[];
-  for(var i=0;i<files.length;i++){
-    var rec=fileRec(files[i].name, files[i].bytes);
-    locals.push(rec);
-    centrals.push(centralRec(files[i].name, files[i].bytes));
-    offset += rec.length;
-  }
-  var cen = concat(centrals);
-  var endSig = Uint8Array.from([0x50,0x4b,0x05,0x06, 0,0, 0,0,
-    (files.length)&255,((files.length)>>8)&255, (files.length)&255,((files.length)>>8)&255,
-    cen.length&255,(cen.length>>8)&255,(cen.length>>16)&255,(cen.length>>24)&255,
-    offset&255,(offset>>8)&255,(offset>>16)&255,(offset>>24)&255, 0,0]);
-  var blob=new Blob([concat(locals), cen, endSig],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  return blob;
-}
-  function exportXlsx(){
-    var rows=rowsForExport();
-    if(window.XLSX){ var ws=window.XLSX.utils.json_to_sheet(rows); var wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); var out=window.XLSX.write(wb,{bookType:'xlsx',type:'array'}); download(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'qr-log-'+ts()+'.xlsx'); }
-    else{ download(xlsxBuiltIn(rows,'Log'),'qr-log-'+ts()+'.xlsx'); }
-  }
-
+  function exportXlsx(){ var rows=rowsForExport(); if(window.XLSX){ var ws=window.XLSX.utils.json_to_sheet(rows); var wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); var out=window.XLSX.write(wb,{bookType:'xlsx',type:'array'}); download(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'qr-log-'+ts()+'.xlsx'); } else { download(xlsxBuiltIn(rows,'Log'),'qr-log-'+ts()+'.xlsx'); } }
   function exportZip(){ if(!(window.JSZip&&window.JSZip.external)) { toast('ZIP export needs JSZip (vendor/jszip.min.js).'); return; } }
-
   function importFile(f){
     var name=(f&&f.name)||'';
     if(/\.csv$/i.test(name)){ f.text().then(importCsvText); return; }
@@ -461,24 +469,25 @@
   $('#manualInput').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); $('#addManualBtn').click(); } });
 
   if(resetDupBtn){ resetDupBtn.addEventListener('click', function(){ seenEver.clear(); toast('Duplicate memory cleared.'); }); }
-
   exportCsvBtn.addEventListener('click', exportCsv);
   exportXlsxBtn.addEventListener('click', exportXlsx);
   exportZipBtn.addEventListener('click', exportZip);
   $('#importFileBtn').addEventListener('click', function(){ fileInput.click(); });
   fileInput.addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; importFile(f); e.target.value=''; });
   clearBtn.addEventListener('click', function(){ if(confirm('Clear all rows?')){ data=[]; save(); render(); seenEver.clear(); }});
+  if (testOCRBtn){ testOCRBtn.addEventListener('click', function(){ ensureTesseract().then(function(w){ if(!w){ toast('OCR engine not ready. Add vendor files.'); return; } var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=(res&&res.data&&res.data.text)||''; toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)')); }); }); }); }
 
   // Keep overlay in sync with video lifecycle & layout
   video.addEventListener('loadedmetadata', sizeOverlay);
   video.addEventListener('playing',        sizeOverlay);
   window.addEventListener('resize',        sizeOverlay);
-  if ('ResizeObserver' in window) {
-    var ro = new ResizeObserver(function(){ sizeOverlay(); });
-    ro.observe(video);
-  }
+  if ('ResizeObserver' in window) { var ro = new ResizeObserver(function(){ sizeOverlay(); }); ro.observe(video); }
 
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
+
+  // === Default behavior: if no scale previously connected/selected, enable OCR by default ===
+  var prefs = loadPrefs();
+  if(!('scalePref' in prefs)){ savePrefs({scalePref:'ocrDefaulted'}); if(scaleModeSel){ scaleModeSel.value='ocr'; } ensureROIOn(); }
 
   load(); render(); enumerateCams(); drawReady();
 })();
