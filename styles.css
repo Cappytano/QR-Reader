@@ -6,7 +6,7 @@ header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.85);-webkit-ba
 .wrap{max-width:1180px;margin:0 auto;padding:16px}
 h1{font-size:22px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-top:2px}
 .grid{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:1100px){.grid{grid-template-columns:520px 1fr}}
-.card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:var(--radius)}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:16px}
 .card .content{padding:16px}
 .video-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
 #video{position:relative;z-index:1;display:block;width:100%;height:auto}

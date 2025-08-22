@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR-Reader (7.2.1)</title>
+  <title>QR-Reader (7.2.2)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -16,7 +16,7 @@
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR-Reader</h1>
-        <div class="subtitle">v7.2.1 — Show Boxes toggle, ZXing-WASM/ZIP kept, Capture & Analyze, Auto Log toggle, Focus slider</div>
+        <div class="subtitle">v7.2.2 — Fix for XLSX builder string, keeps Show Boxes toggle & all features</div>
       </div>
       <div style="display:flex;gap:8px;min-width:680px;flex-wrap:wrap;justify-content:flex-end">
         <span id="scanEngine" class="pill">Engine: Detecting…</span>
@@ -33,7 +33,6 @@
     <div class="grid">
       <section class="card"><div class="content">
         <h2 style="margin:0 0 10px 0">Scanner</h2>
-
         <div class="controls row" style="margin-bottom:8px">
           <label class="sr-only" for="cameraSource">Camera source</label>
           <select id="cameraSource" title="Camera source" class="tight">
@@ -45,32 +44,16 @@
           <input id="remoteCodeInput" class="tight" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Enter code to join" title="Pairing code"/>
           <button id="remoteJoinBtn" type="button" class="secondary">Join</button>
         </div>
-
-        <div class="controls row" style="margin-bottom:8px">
-          <button id="connectSerial" type="button" class="secondary" title="Connect phone via Bluetooth/Serial (Windows COM port)">Connect Phone (Serial)</button>
-          <span id="serialState" class="muted"></span>
-        </div>
-
-        <div class="video-wrap">
-          <video id="video" playsinline webkit-playsinline muted></video>
-          <canvas id="overlay"></canvas>
-        </div>
-
-        <div class="legend" style="margin-top:6px">
-          <span class="dot" style="background:#8b8b8b"></span> ROI active & no text |
-          <span class="dot" style="background:#22c55e"></span> OCR text detected |
-          <span class="dot" style="background:#60a5fa"></span> Barcode preview box
-        </div>
-
+        <div class="video-wrap"><video id="video" playsinline webkit-playsinline muted></video><canvas id="overlay"></canvas></div>
+        <div class="legend" style="margin-top:6px"><span class="dot" style="background:#8b8b8b"></span> ROI | <span class="dot" style="background:#22c55e"></span> OCR text | <span class="dot" style="background:#60a5fa"></span> Barcode boxes</div>
         <div class="controls row" style="margin-top:12px;align-items:center">
           <button id="permBtn" type="button" class="secondary">Request Permission</button>
           <button id="startBtn" type="button" class="primary">Start Camera</button>
           <button id="stopBtn" type="button" class="secondary">Stop</button>
-          <button id="captureBtn" type="button" class="secondary" title="Snapshot & analyze with all engines">Capture & Analyze</button>
+          <button id="captureBtn" type="button" class="secondary">Capture & Analyze</button>
           <label style="display:flex;align-items:center;gap:6px"><input id="autoLog" type="checkbox" checked/> Auto Log</label>
           <label style="display:flex;align-items:center;gap:6px"><input id="showBoxes" type="checkbox" checked/> Show boxes</label>
         </div>
-
         <div class="controls row" style="margin-top:8px">
           <label class="sr-only" for="cameraSelect">Camera</label>
           <select id="cameraSelect" title="Camera" aria-label="Camera device list" class="tight"></select>
@@ -81,13 +64,7 @@
             <option value="user">Prefer Front</option>
             <option value="auto" selected>Auto</option>
           </select>
-          <div id="focusWrap" class="row" style="align-items:center;gap:6px;display:none">
-            <label for="focusSlider">Focus</label>
-            <input id="focusSlider" type="range" min="0" max="1" step="0.01" value="0.5" class="tight"/>
-            <span id="focusInfo" class="muted"></span>
-          </div>
         </div>
-
         <div class="controls row" style="margin-top:8px">
           <label class="sr-only" for="scaleMode">Scale source</label>
           <select id="scaleMode" title="Scale source" class="tight">
@@ -102,20 +79,17 @@
           <button id="connectBLE" type="button" class="secondary">Connect BLE</button>
           <button id="ocrToggle" type="button" class="secondary">Toggle OCR Box</button>
         </div>
-
         <div class="controls row" style="margin-top:8px">
           <label for="cooldownSec">Post‑scan pause (s)</label>
           <input id="cooldownSec" class="tight" type="number" min="0" max="10" step="0.5" value="5"/>
           <label><input id="ignoreDup" type="checkbox" checked/> Ignore duplicates (global)</label>
           <button id="resetDup" type="button" class="secondary">Reset duplicates</button>
         </div>
-
         <div class="controls row" style="margin-top:8px">
           <label class="sr-only" for="manualInput">Manual entry</label>
           <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
           <button id="addManualBtn" type="button">Add</button>
         </div>
-
         <div id="status" class="status" role="status" aria-live="polite"></div>
         <div id="remoteStatus" class="muted" style="margin-top:4px"></div>
         <div id="permState" class="muted" style="margin-top:4px"></div>
