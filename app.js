@@ -1,4 +1,4 @@
-// QR-Reader v7.2.3 CORE (no vendor)
+// QR-Reader v7.2.4 CORE (no vendor)
 (function(){
   'use strict';
   function $(s){ return document.querySelector(s); }
@@ -32,6 +32,34 @@
   // dynamic loader
   function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.onload=function(){res();}; s.onerror=function(){rej(new Error('Failed to load '+src));}; document.head.appendChild(s); }); }
   function ensureJsQR(){ if(window.jsQR) return Promise.resolve(true); return loadScript('vendor/jsQR.js').then(function(){ return !!window.jsQR; }).catch(function(e){ console.warn(e); return false; }); }
+
+  // Tesseract presence flag
+  function ensureTesseract(){
+    if(window.Tesseract && window.Tesseract.recognize) return Promise.resolve(true);
+    return loadScript('vendor/tesseract.min.js').then(function(){ return !!(window.Tesseract && window.Tesseract.recognize); }).catch(function(e){ console.warn(e); return false; });
+  }
+  function tesseractOpts(){
+    return { workerPath:'vendor/worker.min.js', corePath:'vendor/tesseract-core/tesseract-core.wasm.js', langPath:'vendor/lang-data', gzip:true };
+  }
+  function recognizeCanvas(canvas, cb){
+    ensureTesseract().then(function(ok){
+      if(!ok){ setOCRStatus('Missing vendor'); if(cb) cb(''); return; }
+      try{
+        window.Tesseract.recognize(canvas, 'eng', tesseractOpts()).then(function(res){
+          var txt=(res && res.data && res.data.text) || '';
+          if(cb) cb(txt);
+        }).catch(function(err){
+          console.warn('OCR error', err);
+          setOCRStatus('Error');
+          if(cb) cb('');
+        });
+      }catch(e){
+        console.warn('OCR exception', e);
+        setOCRStatus('Error');
+        if(cb) cb('');
+      }
+    });
+  }
 
   function decideFacing(){
     var p=prefFacing.value;
@@ -131,7 +159,7 @@
     var now=new Date(); var existing=null;
     for(var i=0;i<data.length;i++){ if(data[i].content===text){ existing=data[i]; break; } }
     if(existing){ existing.count=(existing.count||1)+1; existing.timestamp=now.toISOString(); existing.date=now.toLocaleDateString(); existing.time=now.toLocaleTimeString(); save(); render(); }
-    else { var row={id:String(Date.now())+Math.random().toString(36).slice(2), content:text, format:fmt||'qr_code', source:'camera', timestamp:now.toISOString(), date:now.toLocaleDateString(), time:now.toLocaleTimeString(), weight:'', photo:'', count:1, notes:''}; data.unshift(row); save(); render(); }
+    else { var row={id:String(Date.now())+Math.random().toString(36).slice(2), content:text, format:fmt||'qr_code', source:'camera', timestamp=now.toISOString(), date=now.toLocaleDateString(), time:now.toLocaleTimeString(), weight:'', photo:'', count:1, notes:''}; data.unshift(row); save(); render(); }
     if(ignoreDup) seenEver.add(text);
     var cd=parseFloat(cooldownSecInput.value||'5'); if(isNaN(cd)) cd=5; cd=Math.max(0,Math.min(10,cd)); cooldownUntil=Date.now()+Math.floor(cd*1000);
     var delayMs=Math.max(0,Math.min(4000,Math.floor(parseFloat(delaySecInput.value||'2')*1000)));
@@ -185,29 +213,6 @@
     }catch(e){}
     return c;
   }
-
-  function ensureTesseract(){
-    function _create(){
-      setOCRStatus('Loading…');
-      return window.Tesseract.createWorker({
-        workerPath:'vendor/worker.min.js',
-        corePath:'vendor/tesseract-core/tesseract-core.wasm.js',
-        langPath:'vendor/lang-data'
-      }).then(function(w){
-        return w.load()
-          .then(function(){return w.loadLanguage('eng');})
-          .then(function(){return w.initialize('eng');})
-          .then(function(){ try{ return w.setParameters({tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',preserve_interword_spaces:'1'}).then(function(){return w;}); }catch(e){ return w; } })
-          .then(function(w){ setOCRStatus('Ready'); return w; });
-      }).catch(function(e){ console.warn('Tesseract init failed',e); setOCRStatus('Missing vendor'); ensureTesseract._p=null; return null; });
-    }
-    if(!(window.Tesseract&&window.Tesseract.createWorker)){
-      return loadScript('vendor/tesseract.min.js').then(function(){ if(window.Tesseract&&window.Tesseract.createWorker){ ensureTesseract._p=ensureTesseract._p||_create(); return ensureTesseract._p; } setOCRStatus('Missing vendor'); return null; }).catch(function(err){ console.warn(err); setOCRStatus('Missing vendor'); return null; });
-    }
-    if(ensureTesseract._p) return ensureTesseract._p;
-    ensureTesseract._p=_create(); return ensureTesseract._p;
-  }
-
   function toGramsString(txt){
     if(!txt) return '';
     var m=String(txt).match(/([-+]?\d*\.?\d+)\s*(kg|g|gram|grams|lb|lbs|oz)?/i);
@@ -227,7 +232,16 @@
     if(!row) return;
     try{ if(video&&video.readyState>=2){ var c=document.createElement('canvas'); c.width=video.videoWidth||0; c.height=video.videoHeight||0; c.getContext('2d').drawImage(video,0,0); row.photo=c.toDataURL('image/jpeg',0.8); } }catch(e){}
     var mode=(scaleModeSel&&scaleModeSel.value)||'none';
-    if(mode==='ocr'){ ensureTesseract().then(function(w){ if(!w){ setStatus('Tesseract not loaded (add vendor files).'); return; } var snap=getRoiSnapshot(); if(!snap){ setStatus('OCR: video not ready'); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=res&&res.data&&res.data.text?res.data.text:''; var grams=toGramsString(txt); if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); } else { setStatus('OCR: no numeric weight found'); } }); }); }
+    if(mode==='ocr'){
+      var snap=getRoiSnapshot(); if(!snap){ setStatus('OCR: video not ready'); save(); render(); return; }
+      var pre=preprocessCanvas(snap);
+      setOCRStatus('Loading…');
+      recognizeCanvas(pre, function(txt){
+        var grams=toGramsString(txt);
+        if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); setOCRStatus('Text'); }
+        else { setStatus('OCR: no numeric weight found'); setOCRStatus(/\S/.test(txt)?'Text':'On'); }
+      });
+    }
     save(); render();
   }
 
@@ -236,11 +250,12 @@
     ocrPulseTimer=setInterval(function(){
       if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; drawROI(); setOCRStatus('On (idle)'); return; }
       if(!(video && video.readyState>=2)){ roi.hasText=false; drawROI(); setOCRStatus('Video not ready'); return; }
-      ensureTesseract().then(function(w){
-        if(!w){ roi.hasText=false; drawROI(); return; }
-        try{ var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; drawROI(); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=(res&&res.data&&res.data.text)||''; var has=/\S/.test(txt); roi.hasText=!!has; drawROI(); setOCRStatus(has?'Text':'On'); }); }catch(e){ roi.hasText=false; drawROI(); setOCRStatus('On'); }
+      var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; drawROI(); return; }
+      var pre=preprocessCanvas(snap);
+      recognizeCanvas(pre, function(txt){
+        var has=/\S/.test(txt); roi.hasText=!!has; drawROI(); setOCRStatus(has?'Text':'On');
       });
-    }, 1200);
+    }, 1400);
   }
 
   function ensureROIOn(){ if(!roi.show){ roi.show=true; sizeOverlay(); drawROI(); } startOcrPulse(); }
@@ -296,7 +311,6 @@
   function exportXlsx(){
     var rows=rowsForExport();
     if(window.XLSX){
-      // Trim long cells to avoid Excel's inline string 32,767 char limit
       var cols=Object.keys(rows[0]||{});
       for(var i=0;i<rows.length;i++){
         for(var j=0;j<cols.length;j++){
@@ -359,7 +373,14 @@
   if ($('#testOCR')){
     $('#testOCR').addEventListener('click', function(){
       ensureROIOn();
-      ensureTesseract().then(function(w){ if(!w){ toast('OCR engine not ready.'); return; } var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=(res&&res.data&&res.data.text)||''; setOCRStatus(txt.trim() ? 'Text' : 'On'); toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)')); roi.hasText=/\S/.test(txt); drawROI(); }); });
+      var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; }
+      var pre=preprocessCanvas(snap);
+      setOCRStatus('Loading…');
+      recognizeCanvas(pre, function(txt){
+        setOCRStatus(txt.trim() ? 'Text' : 'On');
+        toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)'));
+        roi.hasText=/\S/.test(txt); drawROI();
+      });
     });
   }
 
