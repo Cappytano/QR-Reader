@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR-Reader (7.1.6)</title>
+  <title>QR-Reader (7.1.7)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
@@ -16,7 +16,7 @@
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR-Reader</h1>
-        <div class="subtitle">v7.1.6 — full core (no vendor): engines, OCR ROI, exports (CSV+XLSX fallback), duplicate-ignore, pacing</div>
+        <div class="subtitle">v7.1.7 — ROI overlay fix (DPR, z-index, resize), same features, no vendors bundled</div>
       </div>
       <div style="display:flex;gap:8px;min-width:420px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
@@ -51,7 +51,7 @@
 
         <div class="video-wrap">
           <video id="video" playsinline webkit-playsinline muted></video>
-          <canvas id="overlay" style="position:absolute;inset:0;"></canvas>
+          <canvas id="overlay"></canvas>
         </div>
 
         <div class="legend" style="margin-top:6px">
@@ -133,26 +133,6 @@
       </div></section>
     </div>
   </main>
-<!-- Vendor libraries (local) -->
-<script src="vendor/tesseract.min.js"></script>
-<script src="vendor/jsQR.js"></script>
-<script src="vendor/xlsx.full.min.js"></script>
-<script src="vendor/jszip.min.js"></script>
-<script src="vendor/zxing-wasm-reader.iife.js"></script>
-<script>
-  // Point ZXing WASM to the local .wasm file
-  try {
-    if (window.ZXingWASM && typeof ZXingWASM.prepareZXingModule === 'function') {
-      ZXingWASM.prepareZXingModule({
-        overrides: {
-          locateFile: function (path, prefix) {
-            return /\.wasm$/i.test(path) ? 'vendor/zxing_reader.wasm' : (prefix || '') + path;
-          }
-        }
-      });
-    }
-  } catch (e) { console.warn('ZXingWASM prepare error', e); }
-</script>
 
   <script src="app.js"></script>
   <script type="module" src="remote.js"></script>

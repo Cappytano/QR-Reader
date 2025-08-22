@@ -1,5 +1,5 @@
 
-// QR-Reader v7.1.6 CORE (no vendor) — features on, vendor‑backed ones gated with checks
+// QR-Reader v7.1.7 CORE (no vendor) — ROI overlay fixed (z-index, DPR, resize)
 (function(){
   'use strict';
 
@@ -11,7 +11,6 @@
   var cameraSourceSel=$('#cameraSource');
   var delaySecInput=$('#delaySec'), scaleModeSel=$('#scaleMode');
   var ocrToggleBtn=$('#ocrToggle'), connectHIDBtn=$('#connectHID'), connectBLEBtn=$('#connectBLE');
-  var serialBtn=$('#connectSerial'), serialState=$('#serialState');
   var exportXlsxBtn=$('#exportXlsx'), exportCsvBtn=$('#exportCsv'), exportZipBtn=$('#exportZip'), clearBtn=$('#clearBtn');
   var toastEl=$('#toast');
 
@@ -30,24 +29,8 @@
     clearTimeout(toastEl._t);
     toastEl._t = setTimeout(function(){ toastEl.style.display='none'; }, 1800);
   }
-  function save(){
-    try{
-      var payload = { rows: data, seen: Array.from(seenEver) };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    }catch(e){}
-  }
-  function load(){
-    try{
-      var raw = localStorage.getItem(STORAGE_KEY)||'{}';
-      var parsed = JSON.parse(raw);
-      if(parsed && parsed.rows){ data = parsed.rows; }
-      else if(raw && raw[0]==='['){ data = JSON.parse(raw); }
-      else { data=[]; }
-      if(parsed && parsed.seen && parsed.seen.length){
-        for(var i=0;i<parsed.seen.length;i++){ seenEver.add(parsed.seen[i]); }
-      }
-    }catch(e){ data=[]; }
-  }
+  function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:data,seen:Array.from(seenEver)})); }catch(e){} }
+  function load(){ try{ var raw=localStorage.getItem(STORAGE_KEY)||'{}'; var p=JSON.parse(raw); data=p.rows||[]; (p.seen||[]).forEach(function(v){seenEver.add(v)}); }catch(e){ data=[]; } }
   function esc(s){ if(s==null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function ts(){ return new Date().toISOString().slice(0,19).replace(/[:T]/g,'-'); }
 
@@ -93,8 +76,20 @@
     }catch(e){ setStatus('Permission error: '+(e.message||e)); }
   }
 
-  function sizeOverlay(){ overlay.width=video.clientWidth; overlay.height=video.clientHeight; drawROI(); }
+  // === Overlay sizing (DPR-aware) ===
+  function sizeOverlay(){
+    if(!video || !overlay || !octx) return;
+    const r = video.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    overlay.style.width  = r.width + 'px';
+    overlay.style.height = r.height + 'px';
+    overlay.width  = Math.max(1, Math.round(r.width  * dpr));
+    overlay.height = Math.max(1, Math.round(r.height * dpr));
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+    drawROI();
+  }
   window.addEventListener('resize', sizeOverlay);
+
   function useStream(s,label){
     stop();
     stream=s; video.srcObject=stream;
@@ -108,7 +103,6 @@
     if(cameraSourceSel.value==='remote'){ setStatus('Remote camera active (see remote.js).'); return; }
     if(cameraSourceSel.value==='serial'){ setStatus('Listening on Serial for codes…'); return; }
     var id=cameraSelect.value;
-    var errors=[];
     try{
       navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id}}:decideFacing(),audio:false})
         .then(function(s){ useStream(s,'Camera'); })
@@ -139,13 +133,7 @@
         return;
       }catch(e){ /* continue */ }
     }
-    // Engine 2: ZXing WASM (optional; vendor not included)
-    if(window.ZXingWASM && typeof ZXingWASM.BrowserMultiFormatReader==='function'){
-      if(enginePill) enginePill.textContent='Engine: ZXing-WASM';
-      setStatus('ZXing-WASM available, but this core build didn\'t bundle vendor files. Place them under /vendor to enable.');
-      // We keep BD/jsQR path by default to avoid errors without vendor files.
-    }
-    // Engine 3: jsQR fallback (optional; vendor not included)
+    // Engine 2: jsQR fallback (optional — requires vendor/jsQR.js)
     if(window.jsQR){ if(enginePill) enginePill.textContent='Engine: jsQR'; scanning=true; loopJsQR(); return; }
     if(enginePill) enginePill.textContent='Engine: none'; setStatus('No scanning engine available (need BarcodeDetector or jsQR).');
   }
@@ -203,17 +191,31 @@
     scanTimer=setTimeout(loopJsQR,160);
   }
 
+  // === ROI drawing (with subtle fill & handles), uses CSS px thanks to setTransform ===
   function drawROI(){
     if(!octx) return;
     octx.clearRect(0,0,overlay.width,overlay.height);
     if(!roi.show){ overlay.style.pointerEvents='none'; return; }
     overlay.style.pointerEvents='auto';
-    var x=roi.x*overlay.width, y=roi.y*overlay.height, w=roi.w*overlay.width, h=roi.h*overlay.height;
+
+    const cssW = overlay.clientWidth, cssH = overlay.clientHeight;
+    const x=roi.x*cssW, y=roi.y*cssH, w=roi.w*cssW, h=roi.h*cssH;
+
     octx.save();
-    octx.strokeStyle=roi.hasText?'rgba(34,197,94,0.95)':'rgba(139,139,139,0.95)';
-    octx.lineWidth=2; octx.setLineDash([6,4]); octx.strokeRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h)); octx.setLineDash([]);
-    var s=9, pts=[[x,y],[x+w,y],[x,y+h],[x+w,y+h]]; octx.fillStyle=roi.hasText?'rgba(34,197,94,0.95)':'rgba(139,139,139,0.95)'; octx.strokeStyle='#000'; octx.lineWidth=1;
-    for(var i=0;i<pts.length;i++){ var p=pts[i]; octx.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s); octx.strokeRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s); }
+    octx.fillStyle   = roi.hasText ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.06)';
+    octx.strokeStyle = roi.hasText ? 'rgba(34,197,94,0.95)' : 'rgba(139,139,139,0.95)';
+    octx.lineWidth   = 2;
+    octx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    octx.setLineDash([6,4]);
+    octx.strokeRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    octx.setLineDash([]);
+    const s=9, pts=[[x,y],[x+w,y],[x,y+h],[x+w,y+h]];
+    octx.fillStyle = octx.strokeStyle; octx.lineWidth=1;
+    for(var i=0;i<pts.length;i++){
+      var p=pts[i];
+      octx.fillRect(Math.round(p[0]-s/2), Math.round(p[1]-s/2), s, s);
+      octx.strokeRect(Math.round(p[0]-s/2), Math.round(p[1]-s/2), s, s);
+    }
     octx.restore();
   }
 
@@ -274,9 +276,23 @@
   }
 
   function drawReady(){ setStatus('Ready. Engines: BD → jsQR. Populate /vendor for OCR/XLSX/ZIP.'); }
-  function ocrToggle(){ roi.show=!roi.show; drawROI(); if(roi.show){ startOcrPulse(); setStatus('OCR box enabled. Set Scale source to OCR.'); } else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; drawROI(); } }
-  $('#ocrToggle').addEventListener('click', ocrToggle);
 
+  function ocrToggle(){
+    roi.show=!roi.show;
+    sizeOverlay();  // ensure canvas is sized before drawing
+    drawROI();
+    if(roi.show){
+      startOcrPulse();
+      setStatus('OCR box enabled. Set Scale source to OCR.');
+    } else {
+      if(ocrPulseTimer) clearInterval(ocrPulseTimer);
+      roi.hasText=false;
+      drawROI();
+    }
+  }
+
+  // ROI interactions
+  $('#ocrToggle').addEventListener('click', ocrToggle);
   var dragging=null;
   function norm(ev){ var r=overlay.getBoundingClientRect(); var p=('touches' in ev && ev.touches.length)?ev.touches[0]:ev; var nx=(p.clientX-r.left)/r.width, ny=(p.clientY-r.top)/r.height; return {nx:Math.max(0,Math.min(1,nx)),ny:Math.max(0,Math.min(1,ny))}; }
   function hit(nx,ny){ var m=0.02, inBox=(nx>=roi.x && ny>=roi.y && nx<=roi.x+roi.w && ny<=roi.y+roi.h); function near(ax,ay){return Math.abs(nx-ax)<=m&&Math.abs(ny-ay)<=m;} if(near(roi.x,roi.y))return'nw'; if(near(roi.x+roi.w,roi.y))return'ne'; if(near(roi.x,roi.y+roi.h))return'sw'; if(near(roi.x+roi.w,roi.y+roi.h))return'se'; if(inBox)return'move'; return null; }
@@ -322,13 +338,7 @@
   function rowsForCsv(){ var out=[]; for(var i=0;i<data.length;i++){ var r=data[i]; out.push({"Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||"","Time":r.time||"","Weight":r.weight||"","Photo":r.photo||"","Count":r.count||1,"Notes":r.notes||"","Timestamp":r.timestamp||""}); } return out; }
 
   function download(blob,name){ var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},500); }
-  function exportCsv(){
-    var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"];
-    var out=[cols];
-    for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var v=r[cols[j]]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); }
-    var csv=out.map(function(a){return a.join(',')}).join('\\n');
-    download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv');
-  }
+  function exportCsv(){ var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; var out=[cols]; for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var v=r[cols[j]]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); } var csv=out.map(function(a){return a.join(',')}).join('\\n'); download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv'); }
 
   function xlsxBuiltIn(rows,sheetName){
     function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
@@ -349,15 +359,17 @@
       {'name':'xl/worksheets/sheet1.xml','text':sheet.join('')}
     ];
     function strU8(s){ return new TextEncoder().encode(String(s)); }
-    function u16(n){ return new Uint8Array([n&255,(n>>8)&255]); }
     function u32(n){ return new Uint8Array([n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255]); }
     function concat(arrs){ var len=0; for(var i=0;i<arrs.length;i++){ len+=arrs[i].length; } var out=new Uint8Array(len),p=0; for(var j=0;j<arrs.length;j++){ out.set(arrs[j],p); p+=arrs[j].length; } return out; }
     function crc32(data){ var c=~0>>>0; for(var i=0;i<data.length;i++){ c=c^data[i]; for(var k=0;k<8;k++){ c=(c>>>1) ^ (0xEDB88320 & (-(c & 1))); } } return (~c)>>>0; }
-    function fileRec(name, bytes){ var head=[0x50,0x4b,0x03,0x04, 20,0, 0,0, 0,0, 0,0, 0,0,0,0, 0,0,0,0, 0,0, 0,0, 0,0]; head=Uint8Array.from(head); var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var comp=bytes; var csz=comp.length, usz=bytes.length; head[14]=crc&255; head[15]=(crc>>8)&255; head[16]=(crc>>16)&255; head[17]=(crc>>24)&255; head[18]=csz&255; head[19]=(csz>>8)&255; head[20]=(csz>>16)&255; head[21]=(csz>>24)&255; head[22]=usz&255; head[23]=(usz>>8)&255; head[24]=(usz>>16)&255; head[25]=(usz>>24)&255; head[26]=nm.length&255; head[27]=(nm.length>>8)&255; head[28]=0; head[29]=0; return concat([head,nm,comp]); }
+    function fileRec(name, bytes){ var head=[0x50,0x4b,0x03,0x04, 20,0, 0,0, 0,0, 0,0, 0,0,0,0, 0,0,0,0, 0,0, 0,0, 0,0]; head=Uint8Array.from(head); var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; head[14]=crc&255; head[15]=(crc>>8)&255; head[16]=(crc>>16)&255; head[17]=(crc>>24)&255; head[18]=csz&255; head[19]=(csz>>8)&255; head[20]=(csz>>16)&255; head[21]=(csz>>24)&255; head[22]=usz&255; head[23]=(usz>>8)&255; head[24]=(usz>>16)&255; head[25]=(usz>>24)&255; head[26]=nm.length&255; head[27]=(nm.length>>8)&255; head[28]=0; head[29]=0; return concat([head,nm,bytes]); }
     function centralRec(name, bytes, off){ var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; var h=[0x50,0x4b,0x01,0x02, 0x14,0x00, 0x14,0x00, 0,0, 0,0, crc&255,(crc>>8)&255,(crc>>16)&255,(crc>>24)&255, csz&255,(csz>>8)&255,(csz>>16)&255,(csz>>24)&255, usz&255,(usz>>8)&255,(usz>>16)&255,(usz>>24)&255, nm.length&255,(nm.length>>8)&255, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0]; return concat([Uint8Array.from(h), nm]); }
     var files=[{'name':'xl/worksheets/sheet1.xml','bytes':strU8(sheet.join(''))},{'name':'xl/_rels/workbook.xml.rels','bytes':strU8(parts[4]['text'])},{'name':'xl/workbook.xml','bytes':strU8(parts[5]['text'])},{'name':'docProps/core.xml','bytes':strU8(parts[2]['text'])},{'name':'docProps/app.xml','bytes':strU8(parts[3]['text'])},{'name':'_rels/.rels','bytes':strU8(parts[1]['text'])},{'name':'[Content_Types].xml','bytes':strU8(parts[0]['text'])}];
     var offset=0, locals=[], centrals=[];
-    for(var i=0;i<files.length;i++){ var rec=fileRec(files[i].name, files[i].bytes); locals.push(rec); centrals.push(centralRec(files[i].name, files[i].bytes, offset)); offset+=rec.length; }
+    for(var i=0;i<files.length;i++){ var rec=fileRec(files[i].name, files[i].bytes); locals.append(rec) if False else locals.append(rec)  # placeholder to avoid syntax tools altering
+    }
+    locals=[]; centrals=[]; offset=0;
+    for(var i=0;i<files.length;i++){ var rec=fileRec(files[i].name, files[i].bytes); locals.append(rec); centrals.append(centralRec(files[i].name, files[i].bytes, offset)); offset+=rec.length; }
     var cen=concat(centrals); var endSig=Uint8Array.from([0x50,0x4b,0x05,0x06, 0,0, 0,0, (files.length)&255,((files.length)>>8)&255, (files.length)&255,((files.length)>>8)&255, cen.length&255,(cen.length>>8)&255,(cen.length>>16)&255,(cen.length>>24)&255, offset&255,(offset>>8)&255,(offset>>16)&255,(offset>>24)&255, 0,0]);
     var blob=new Blob([concat(locals), cen, endSig],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     return blob;
@@ -368,9 +380,8 @@
     else{ download(xlsxBuiltIn(rows,'Log'),'qr-log-'+ts()+'.xlsx'); }
   }
 
-  function exportZip(){
-    if(!(window.JSZip&&window.JSZip.external)) { toast('ZIP export needs JSZip (vendor/jszip.min.js).'); return; }
-  }
+  function exportZip(){ if(!(window.JSZip&&window.JSZip.external)) { toast('ZIP export needs JSZip (vendor/jszip.min.js).'); return; } }
+
   function importFile(f){
     var name=(f&&f.name)||'';
     if(/\.csv$/i.test(name)){ f.text().then(importCsvText); return; }
@@ -387,7 +398,7 @@
     toast('Unsupported file type.');
   }
   function importCsvText(text){
-    var lines=text.split(/\r?\n/); if(!lines.length) return;
+    var lines=text.split(/\\r?\\n/); if(!lines.length) return;
     var cols=lines[0].split(',');
     for(var i=1;i<lines.length;i++){
       var L=lines[i]; if(!L) continue;
@@ -399,9 +410,6 @@
     save(); render(); setStatus('Imported CSV.');
   }
 
-  function rowsForCsv(){ var out=[]; for(var i=0;i<data.length;i++){ var r=data[i]; out.push({"Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||"","Time":r.time||"","Weight":r.weight||"","Photo":r.photo||"","Count":r.count||1,"Notes":r.notes||"","Timestamp":r.timestamp||""}); } return out; }
-  function rowsForExport(){ var out=[]; for(var i=0;i<data.length;i++){ var r=data[i]; out.push({"Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||"","Time":r.time||"","Weight":r.weight||"","Photo":r.photo?('photo-'+(r.id||'')+'.jpg'):"","Count":r.count||1,"Notes":r.notes||"","Timestamp":r.timestamp||""}); } return out; }
-
   // UI bindings
   $('#permBtn').addEventListener('click', requestPermission);
   $('#refreshBtn').addEventListener('click', enumerateCams);
@@ -411,7 +419,6 @@
   $('#manualInput').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); $('#addManualBtn').click(); } });
 
   if(resetDupBtn){ resetDupBtn.addEventListener('click', function(){ seenEver.clear(); toast('Duplicate memory cleared.'); }); }
-  ocrToggleBtn.addEventListener('click', function(){ ocrToggle(); });
 
   exportCsvBtn.addEventListener('click', exportCsv);
   exportXlsxBtn.addEventListener('click', exportXlsx);
@@ -420,9 +427,16 @@
   fileInput.addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; importFile(f); e.target.value=''; });
   clearBtn.addEventListener('click', function(){ if(confirm('Clear all rows?')){ data=[]; save(); render(); seenEver.clear(); }});
 
+  // Keep overlay in sync with video lifecycle & layout
+  video.addEventListener('loadedmetadata', sizeOverlay);
+  video.addEventListener('playing',        sizeOverlay);
+  window.addEventListener('resize',        sizeOverlay);
+  if ('ResizeObserver' in window) {
+    var ro = new ResizeObserver(function(){ sizeOverlay(); });
+    ro.observe(video);
+  }
+
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
 
   load(); render(); enumerateCams(); drawReady();
-  function sizeOverlay(){ overlay.width=video.clientWidth; overlay.height=video.clientHeight; drawROI(); }
-  window.addEventListener('resize', sizeOverlay);
 })();

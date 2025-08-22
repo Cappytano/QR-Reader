@@ -9,7 +9,8 @@ h1{font-size:22px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-to
 .card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:var(--radius)}
 .card .content{padding:16px}
 .video-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
-video{width:100%;display:block}
+#video{position:relative;z-index:1;display:block;width:100%;height:auto}
+#overlay{position:absolute;inset:0;z-index:2;display:block}
 .controls{display:flex;gap:8px;flex-wrap:wrap}.controls>*{flex:1 1 auto}
 button,select,input,textarea{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
 button{cursor:pointer}

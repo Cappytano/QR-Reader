@@ -1,5 +1,5 @@
 
-// Minimal local HTTPS-less dev server (uses http). For camera, prefer localhost or serve over https in production.
+// Minimal local dev server (http). For camera, prefer https or http://localhost in Chrome/Edge.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
