@@ -1,5 +1,5 @@
 
-// QR-Reader v7.1.9 CORE (no vendor) — OCR default-on & live status
+// QR-Reader v7.2.0 CORE (no vendor) — OCR defaults & Test OCR fixed
 (function(){
   'use strict';
 
@@ -20,7 +20,6 @@
   var roi = { x:0.58, y:0.58, w:0.40, h:0.38, show:false, hasText:false };
   var ocrPulseTimer=null;
   var seenEver = new Set();
-  var everConnectedScale=false;
 
   function setStatus(t){ if(statusEl){ statusEl.textContent=t||''; } }
   function setOCRStatus(t){ if(ocrStatus){ ocrStatus.textContent='OCR: '+t; } }
@@ -32,12 +31,8 @@
     toastEl._t = setTimeout(function(){ toastEl.style.display='none'; }, 1800);
   }
   function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:data,seen:Array.from(seenEver)})); }catch(e){} }
-  function savePrefs(obj){
-    try { var p=loadPrefs(); for(var k in obj){ p[k]=obj[k]; } localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch(e){}
-  }
-  function loadPrefs(){
-    try { return JSON.parse(localStorage.getItem(PREF_KEY)||'{}'); } catch(e){ return {}; }
-  }
+  function savePrefs(obj){ try { var p=loadPrefs(); for(var k in obj){ p[k]=obj[k]; } localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch(e){} }
+  function loadPrefs(){ try { return JSON.parse(localStorage.getItem(PREF_KEY)||'{}'); } catch(e){ return {}; } }
   function load(){
     try{
       var raw=localStorage.getItem(STORAGE_KEY)||'{}';
@@ -151,7 +146,8 @@
     }
     // Engine 2: jsQR fallback (optional — requires vendor/jsQR.js)
     if(window.jsQR){ if(enginePill) enginePill.textContent='Engine: jsQR'; scanning=true; loopJsQR(); return; }
-    if(enginePill) enginePill.textContent='Engine: none'; setStatus('No scanning engine available (need BarcodeDetector or jsQR).');
+    if(enginePill) enginePill.textContent='Engine: none';
+    setStatus('No scanning engine available (need BarcodeDetector or jsQR). If your org disables Shape Detection API, add vendor/jsQR.js.');
   }
 
   function inCooldown(){ return Date.now()<cooldownUntil; }
@@ -207,16 +203,14 @@
     scanTimer=setTimeout(loopJsQR,160);
   }
 
-  // === ROI drawing (with subtle fill & handles), uses CSS px (setTransform applied) ===
+  // === ROI drawing ===
   function drawROI(){
     if(!octx) return;
     octx.clearRect(0,0,overlay.width,overlay.height);
     if(!roi.show){ overlay.style.pointerEvents='none'; return; }
     overlay.style.pointerEvents='auto';
-
     const cssW = overlay.clientWidth, cssH = overlay.clientHeight;
     const x=roi.x*cssW, y=roi.y*cssH, w=roi.w*cssW, h=roi.h*cssH;
-
     octx.save();
     octx.fillStyle   = roi.hasText ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.06)';
     octx.strokeStyle = roi.hasText ? 'rgba(34,197,94,0.95)' : 'rgba(139,139,139,0.95)';
@@ -235,24 +229,20 @@
     octx.restore();
   }
 
-  // Lightweight preprocessing to help Tesseract
+  // Lightweight preprocessing
   function preprocessCanvas(src){
     var c=document.createElement('canvas'); c.width=src.width; c.height=src.height;
-    var ctx=c.getContext('2d');
-    ctx.drawImage(src,0,0);
+    var ctx=c.getContext('2d'); ctx.drawImage(src,0,0);
     try{
       var img=ctx.getImageData(0,0,c.width,c.height);
-      var d=img.data, n=d.length;
-      // grayscale + simple contrast/threshold
-      var thresh=160, contrast=1.2;
+      var d=img.data, n=d.length; var thresh=160, contrast=1.2;
       for(var i=0;i<n;i+=4){
         var y = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-        y = (y-128)*contrast + 128;
-        var v = y>thresh ? 255 : 0;
+        y = (y-128)*contrast + 128; var v = y>thresh ? 255 : 0;
         d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
       }
       ctx.putImageData(img,0,0);
-    }catch(e){ /* ignore */ }
+    }catch(e){}
     return c;
   }
 
@@ -338,11 +328,11 @@
 
   function ocrToggle(){
     roi.show=!roi.show;
-    sizeOverlay();  // ensure canvas is sized before drawing
-    drawROI();
+    sizeOverlay(); drawROI();
     if(roi.show){
       startOcrPulse();
       setStatus('OCR box enabled. Set Scale source to OCR.');
+      setOCRStatus('On');
     } else {
       if(ocrPulseTimer) clearInterval(ocrPulseTimer);
       roi.hasText=false;
@@ -401,7 +391,7 @@
   function exportCsv(){ var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; var out=[cols]; for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var v=r[cols[j]]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); } var csv=out.map(function(a){return a.join(',')}).join('\\n'); download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv'); }
 
   function xlsxBuiltIn(rows,sheetName){
-    function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/<//g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
+    function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
     function colRef(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
     function attr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}
     var cols=rows.length?Object.keys(rows[0]):[];
@@ -475,7 +465,24 @@
   $('#importFileBtn').addEventListener('click', function(){ fileInput.click(); });
   fileInput.addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; importFile(f); e.target.value=''; });
   clearBtn.addEventListener('click', function(){ if(confirm('Clear all rows?')){ data=[]; save(); render(); seenEver.clear(); }});
-  if (testOCRBtn){ testOCRBtn.addEventListener('click', function(){ ensureTesseract().then(function(w){ if(!w){ toast('OCR engine not ready. Add vendor files.'); return; } var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=(res&&res.data&&res.data.text)||''; toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)')); }); }); }); }
+
+  if (testOCRBtn){
+    testOCRBtn.addEventListener('click', function(){
+      // Ensure ROI and OCR engine
+      ensureROIOn();
+      ensureTesseract().then(function(w){
+        if(!w){ toast('OCR engine not ready. Add vendor files.'); return; }
+        var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; }
+        var pre=preprocessCanvas(snap);
+        w.recognize(pre).then(function(res){
+          var txt=(res&&res.data&&res.data.text)||'';
+          setOCRStatus(txt.trim() ? 'Text' : 'On');
+          toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)'));
+          roi.hasText = /\S/.test(txt); drawROI();
+        });
+      });
+    });
+  }
 
   // Keep overlay in sync with video lifecycle & layout
   video.addEventListener('loadedmetadata', sizeOverlay);
@@ -485,9 +492,19 @@
 
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
 
-  // === Default behavior: if no scale previously connected/selected, enable OCR by default ===
+  // Prefs: default OCR if no stored preference or stored "none"
   var prefs = loadPrefs();
-  if(!('scalePref' in prefs)){ savePrefs({scalePref:'ocrDefaulted'}); if(scaleModeSel){ scaleModeSel.value='ocr'; } ensureROIOn(); }
+  var initialScale = prefs.scaleMode || 'ocr';
+  if(scaleModeSel){ scaleModeSel.value = initialScale; }
+  if(initialScale === 'ocr'){ ensureROIOn(); setOCRStatus('On'); }
+  // persist on change
+  if(scaleModeSel){
+    scaleModeSel.addEventListener('change', function(){
+      savePrefs({scaleMode: scaleModeSel.value});
+      if(scaleModeSel.value==='ocr'){ ensureROIOn(); setOCRStatus('On'); }
+      else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; drawROI(); setOCRStatus('Off'); }
+    });
+  }
 
-  load(); render(); enumerateCams(); drawReady();
+  load(); render(); enumerateCams(); setTimeout(function(){ drawReady(); }, 0);
 })();
