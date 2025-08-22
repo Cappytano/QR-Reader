@@ -1,12 +1,10 @@
 {
   "name": "qr-reader",
-  "version": "7.1.5",
   "private": true,
-  "description": "QR-Reader full site (core only, no vendor)",
+  "version": "7.1.6",
+  "type": "module",
   "scripts": {
     "start": "node server.js"
   },
-  "dependencies": {
-    "express": "^4.19.2"
-  }
+  "dependencies": {}
 }

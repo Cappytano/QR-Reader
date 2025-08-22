@@ -3,38 +3,20 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR-Reader (7.1.5)</title>
+  <title>QR-Reader (7.1.6)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
   <link rel="icon" type="image/png" sizes="1x1" href="icons/icon-192.png"/>
   <link rel="apple-touch-icon" href="icons/icon-192.png"/>
   <link rel="stylesheet" href="styles.css"/>
-  <!-- Vendor (expected under /vendor; not included in this zip) -->
-  <script src="vendor/zxing-wasm-reader.iife.js"></script>
-  <script>
-    (function(){
-      try{
-        if (window.ZXingWASM && typeof ZXingWASM.prepareZXingModule === 'function') {
-          ZXingWASM.prepareZXingModule({
-            overrides: { locateFile: function(path, prefix){
-              return /\.wasm$/i.test(path) ? 'vendor/zxing_reader.wasm' : (prefix || '') + path;
-            }}
-          });
-        }
-      }catch(e){ console.warn('ZXingWASM prepare error', e); }
-    })();
-  </script>
-  <script src="vendor/jsQR.js"></script>
-  <script src="vendor/tesseract.min.js"></script>
-  <script src="vendor/xlsx.full.min.js"></script>
 </head>
 <body>
   <header>
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR-Reader</h1>
-        <div class="subtitle">v7.1.5 — OCR live status + ROI highlight • duplicate ignore • vendor-agnostic</div>
+        <div class="subtitle">v7.1.6 — full core (no vendor): engines, OCR ROI, exports (CSV+XLSX fallback), duplicate-ignore, pacing</div>
       </div>
       <div style="display:flex;gap:8px;min-width:420px">
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
@@ -106,7 +88,8 @@
           </select>
           <label class="sr-only" for="delaySec">Scale delay seconds</label>
           <input id="delaySec" type="number" min="0" max="4" step="0.1" value="2" title="Delay (seconds)" class="tight"/>
-          <button id="connectHID" type="button" class="secondary">Connect BLE/HID</button>
+          <button id="connectHID" type="button" class="secondary">Connect USB/HID</button>
+          <button id="connectBLE" type="button" class="secondary">Connect BLE</button>
           <button id="ocrToggle" type="button" class="secondary">Toggle OCR Box</button>
         </div>
 
@@ -150,6 +133,26 @@
       </div></section>
     </div>
   </main>
+<!-- Vendor libraries (local) -->
+<script src="vendor/tesseract.min.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/zxing-wasm-reader.iife.js"></script>
+<script>
+  // Point ZXing WASM to the local .wasm file
+  try {
+    if (window.ZXingWASM && typeof ZXingWASM.prepareZXingModule === 'function') {
+      ZXingWASM.prepareZXingModule({
+        overrides: {
+          locateFile: function (path, prefix) {
+            return /\.wasm$/i.test(path) ? 'vendor/zxing_reader.wasm' : (prefix || '') + path;
+          }
+        }
+      });
+    }
+  } catch (e) { console.warn('ZXingWASM prepare error', e); }
+</script>
 
   <script src="app.js"></script>
   <script type="module" src="remote.js"></script>
