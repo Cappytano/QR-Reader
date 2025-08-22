@@ -1,4 +1,4 @@
-// QR-Reader v7.2.5 CORE (no vendor)
+// QR-Reader v7.2.4 CORE (no vendor)
 (function(){
   'use strict';
   function $(s){ return document.querySelector(s); }
@@ -33,9 +33,14 @@
   function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.onload=function(){res();}; s.onerror=function(){rej(new Error('Failed to load '+src));}; document.head.appendChild(s); }); }
   function ensureJsQR(){ if(window.jsQR) return Promise.resolve(true); return loadScript('vendor/jsQR.js').then(function(){ return !!window.jsQR; }).catch(function(e){ console.warn(e); return false; }); }
 
-  // Tesseract recognize-only flow
-  function ensureTesseract(){ if(window.Tesseract && window.Tesseract.recognize) return Promise.resolve(true); return loadScript('vendor/tesseract.min.js').then(function(){ return !!(window.Tesseract && window.Tesseract.recognize); }).catch(function(e){ console.warn(e); return false; }); }
-  function tesseractOpts(){ return { workerPath:'vendor/worker.min.js', corePath:'vendor/tesseract-core/tesseract-core.wasm.js', langPath:'vendor/lang-data', gzip:true }; }
+  // Tesseract presence flag
+  function ensureTesseract(){
+    if(window.Tesseract && window.Tesseract.recognize) return Promise.resolve(true);
+    return loadScript('vendor/tesseract.min.js').then(function(){ return !!(window.Tesseract && window.Tesseract.recognize); }).catch(function(e){ console.warn(e); return false; });
+  }
+  function tesseractOpts(){
+    return { workerPath:'vendor/worker.min.js', corePath:'vendor/tesseract-core/tesseract-core.wasm.js', langPath:'vendor/lang-data', gzip:true };
+  }
   function recognizeCanvas(canvas, cb){
     ensureTesseract().then(function(ok){
       if(!ok){ setOCRStatus('Missing vendor'); if(cb) cb(''); return; }
@@ -154,22 +159,7 @@
     var now=new Date(); var existing=null;
     for(var i=0;i<data.length;i++){ if(data[i].content===text){ existing=data[i]; break; } }
     if(existing){ existing.count=(existing.count||1)+1; existing.timestamp=now.toISOString(); existing.date=now.toLocaleDateString(); existing.time=now.toLocaleTimeString(); save(); render(); }
-    else {
-      var row={
-        id:String(Date.now())+Math.random().toString(36).slice(2),
-        content:text,
-        format:fmt||'qr_code',
-        source:'camera',
-        timestamp: now.toISOString(),
-        date:now.toLocaleDateString(),
-        time:now.toLocaleTimeString(),
-        weight:'',
-        photo:'',
-        count:1,
-        notes:''
-      };
-      data.unshift(row); save(); render();
-    }
+    else { var row={id:String(Date.now())+Math.random().toString(36).slice(2), content:text, format:fmt||'qr_code', source:'camera', timestamp=now.toISOString(), date=now.toLocaleDateString(), time:now.toLocaleTimeString(), weight:'', photo:'', count:1, notes:''}; data.unshift(row); save(); render(); }
     if(ignoreDup) seenEver.add(text);
     var cd=parseFloat(cooldownSecInput.value||'5'); if(isNaN(cd)) cd=5; cd=Math.max(0,Math.min(10,cd)); cooldownUntil=Date.now()+Math.floor(cd*1000);
     var delayMs=Math.max(0,Math.min(4000,Math.floor(parseFloat(delaySecInput.value||'2')*1000)));
