@@ -341,39 +341,81 @@
   function exportCsv(){ var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; var out=[cols]; for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var v=r[cols[j]]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); } var csv=out.map(function(a){return a.join(',')}).join('\\n'); download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv'); }
 
   function xlsxBuiltIn(rows,sheetName){
-    function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
-    function colRef(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
-    function attr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}
-    var cols=rows.length?Object.keys(rows[0]):[];
-    var sheet=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>','<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'];
-    sheet.push('<row r="1">'); for(var i=0;i<cols.length;i++){ var c=cols[i]; sheet.push('<c r="'+colRef(i+1)+'1" t="inlineStr"><is><t>'+escXml(c)+'</t></is></c>'); } sheet.push('</row>');
-    for(var ri=0;ri<rows.length;ri++){ var r=rows[ri]; var rr=ri+2; sheet.push('<row r="'+rr+'">'); for(var ci=0;ci<cols.length;ci++){ var cc=cols[ci]; var v=(r[cc]==null?'':String(r[cc])); if(v.length>32760) v=v.slice(0,32759)+'…'; sheet.push('<c r="'+colRef(ci+1)+rr+'" t="inlineStr"><is><t>'+escXml(v)+'</t></is></c>'); } sheet.push('</row>'); }
-    sheet.push('</sheetData></worksheet>');
-    var parts=[
-      {'name':'[Content_Types].xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\\n<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\\n<Default Extension="xml" ContentType="application/xml"/>\\n<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\\n<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\\n<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\\n<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\\n</Types>'},
-      {'name':'_rels/.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>\\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships" Target="docProps/app.xml"/>\\n</Relationships>'},
-      {'name':'docProps/core.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},
-      {'name':'docProps/app.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>QR Logger</Application></Properties>'},
-      {'name':'xl/_rels/workbook.xml.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\\n</Relationships>'},
-      {'name':'xl/workbook.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\\n  <sheets><sheet name="'+attr(sheetName)+'" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>\\n</workbook>'},
-      {'name':'xl/worksheets/sheet1.xml','text':sheet.join('')}
-    ];
-    function strU8(s){ return new TextEncoder().encode(String(s)); }
-    function u32(n){ return new Uint8Array([n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255]); }
-    function concat(arrs){ var len=0; for(var i=0;i<arrs.length;i++){ len+=arrs[i].length; } var out=new Uint8Array(len),p=0; for(var j=0;j<arrs.length;j++){ out.set(arrs[j],p); p+=arrs[j].length; } return out; }
-    function crc32(data){ var c=~0>>>0; for(var i=0;i<data.length;i++){ c=c^data[i]; for(var k=0;k<8;k++){ c=(c>>>1) ^ (0xEDB88320 & (-(c & 1))); } } return (~c)>>>0; }
-    function fileRec(name, bytes){ var head=[0x50,0x4b,0x03,0x04, 20,0, 0,0, 0,0, 0,0, 0,0,0,0, 0,0,0,0, 0,0, 0,0, 0,0]; head=Uint8Array.from(head); var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; head[14]=crc&255; head[15]=(crc>>8)&255; head[16]=(crc>>16)&255; head[17]=(crc>>24)&255; head[18]=csz&255; head[19]=(csz>>8)&255; head[20]=(csz>>16)&255; head[21]=(csz>>24)&255; head[22]=usz&255; head[23]=(usz>>8)&255; head[24]=(usz>>16)&255; head[25]=(usz>>24)&255; head[26]=nm.length&255; head[27]=(nm.length>>8)&255; head[28]=0; head[29]=0; return concat([head,nm,bytes]); }
-    function centralRec(name, bytes, off){ var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; var h=[0x50,0x4b,0x01,0x02, 0x14,0x00, 0x14,0x00, 0,0, 0,0, crc&255,(crc>>8)&255,(crc>>16)&255,(crc>>24)&255, csz&255,(csz>>8)&255,(csz>>16)&255,(csz>>24)&255, usz&255,(usz>>8)&255,(usz>>16)&255,(usz>>24)&255, nm.length&255,(nm.length>>8)&255, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0]; return concat([Uint8Array.from(h), nm]); }
-    var files=[{'name':'xl/worksheets/sheet1.xml','bytes':strU8(sheet.join(''))},{'name':'xl/_rels/workbook.xml.rels','bytes':strU8(parts[4]['text'])},{'name':'xl/workbook.xml','bytes':strU8(parts[5]['text'])},{'name':'docProps/core.xml','bytes':strU8(parts[2]['text'])},{'name':'docProps/app.xml','bytes':strU8(parts[3]['text'])},{'name':'_rels/.rels','bytes':strU8(parts[1]['text'])},{'name':'[Content_Types].xml','bytes':strU8(parts[0]['text'])}];
-    var offset=0, locals=[], centrals=[];
-    for(var i=0;i<files.length;i++){ var rec=fileRec(files[i].name, files[i].bytes); locals.append(rec) if False else locals.append(rec)  # placeholder to avoid syntax tools altering
-    }
-    locals=[]; centrals=[]; offset=0;
-    for(var i=0;i<files.length;i++){ var rec=fileRec(files[i].name, files[i].bytes); locals.append(rec); centrals.append(centralRec(files[i].name, files[i].bytes, offset)); offset+=rec.length; }
-    var cen=concat(centrals); var endSig=Uint8Array.from([0x50,0x4b,0x05,0x06, 0,0, 0,0, (files.length)&255,((files.length)>>8)&255, (files.length)&255,((files.length)>>8)&255, cen.length&255,(cen.length>>8)&255,(cen.length>>16)&255,(cen.length>>24)&255, offset&255,(offset>>8)&255,(offset>>16)&255,(offset>>24)&255, 0,0]);
-    var blob=new Blob([concat(locals), cen, endSig],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    return blob;
+  function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
+  function colRef(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
+  function attr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}
+  var cols=rows.length?Object.keys(rows[0]):[];
+
+  var sheet=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>','<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'];
+  sheet.push('<row r="1">');
+  for(var i=0;i<cols.length;i++){ var c=cols[i]; sheet.push('<c r="'+colRef(i+1)+'1" t="inlineStr"><is><t>'+escXml(c)+'</t></is></c>'); }
+  sheet.push('</row>');
+  for(var ri=0;ri<rows.length;ri++){ var r=rows[ri]; var rr=ri+2; sheet.push('<row r="'+rr+'">'); for(var ci=0;ci<cols.length;ci++){ var cc=cols[ci]; var v=(r[cc]==null?'':String(r[cc])); if(v.length>32760) v=v.slice(0,32759)+'…'; sheet.push('<c r="'+colRef(ci+1)+rr+'" t="inlineStr"><is><t>'+escXml(v)+'</t></is></c>'); } sheet.push('</row>'); }
+  sheet.push('</sheetData></worksheet>');
+
+  var parts=[
+    {'name':'[Content_Types].xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n<Default Extension="xml" ContentType="application/xml"/>\n<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\n<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\n<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\n</Types>'},
+    {'name':'_rels/.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships" Target="docProps/app.xml"/>\n</Relationships>'},
+    {'name':'docProps/core.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\n</cp:coreProperties>'},
+    {'name':'docProps/app.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>QR Logger</Application></Properties>'},
+    {'name':'xl/_rels/workbook.xml.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\n</Relationships>'},
+    {'name':'xl/workbook.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n  <sheets><sheet name="'+attr(sheetName)+'" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>\n</workbook>'},
+    {'name':'xl/worksheets/sheet1.xml','text':sheet.join('')}
+  ];
+
+  function strU8(s){ return new TextEncoder().encode(String(s)); }
+  function concat(arrs){ var len=0; for(var i=0;i<arrs.length;i++){ len+=arrs[i].length; } var out=new Uint8Array(len),p=0; for(var j=0;j<arrs.length;j++){ out.set(arrs[j],p); p+=arrs[j].length; } return out; }
+  function crc32(data){ var c=~0>>>0; for(var i=0;i<data.length;i++){ c=c^data[i]; for(var k=0;k<8;k++){ c=(c>>>1) ^ (0xEDB88320 & (-(c & 1))); } } return (~c)>>>0; }
+
+  function fileRec(name, bytes){
+    var head=[0x50,0x4b,0x03,0x04, 20,0, 0,0, 0,0, 0,0, 0,0,0,0, 0,0,0,0, 0,0, 0,0, 0,0];
+    head=Uint8Array.from(head);
+    var nm=new TextEncoder().encode(name);
+    var crc=crc32(bytes);
+    var csz=bytes.length, usz=bytes.length;
+    head[14]=crc&255; head[15]=(crc>>8)&255; head[16]=(crc>>16)&255; head[17]=(crc>>24)&255;
+    head[18]=csz&255; head[19]=(csz>>8)&255; head[20]=(csz>>16)&255; head[21]=(csz>>24)&255;
+    head[22]=usz&255; head[23]=(usz>>8)&255; head[24]=(usz>>16)&255; head[25]=(usz>>24)&255;
+    head[26]=nm.length&255; head[27]=(nm.length>>8)&255; head[28]=0; head[29]=0;
+    return concat([head,nm,bytes]);
   }
+  function centralRec(name, bytes){
+    var nm=new TextEncoder().encode(name);
+    var crc=crc32(bytes);
+    var csz=bytes.length, usz=bytes.length;
+    var h=[0x50,0x4b,0x01,0x02, 0x14,0x00, 0x14,0x00, 0,0, 0,0,
+      crc&255,(crc>>8)&255,(crc>>16)&255,(crc>>24)&255,
+      csz&255,(csz>>8)&255,(csz>>16)&255,(csz>>24)&255,
+      usz&255,(usz>>8)&255,(usz>>16)&255,(usz>>24)&255,
+      nm.length&255,(nm.length>>8)&255, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0];
+    return new Uint8Array(h.concat(Array.from(nm)));
+  }
+
+  var files=[
+    {'name':'xl/worksheets/sheet1.xml','bytes':strU8(sheet.join(''))},
+    {'name':'xl/_rels/workbook.xml.rels','bytes':strU8(parts[4]['text'])},
+    {'name':'xl/workbook.xml','bytes':strU8(parts[5]['text'])},
+    {'name':'docProps/core.xml','bytes':strU8(parts[2]['text'])},
+    {'name':'docProps/app.xml','bytes':strU8(parts[3]['text'])},
+    {'name':'_rels/.rels','bytes':strU8(parts[1]['text'])},
+    {'name':'[Content_Types].xml','bytes':strU8(parts[0]['text'])}
+  ];
+
+  var offset=0, locals=[], centrals=[];
+  for(var i=0;i<files.length;i++){
+    var rec=fileRec(files[i].name, files[i].bytes);
+    locals.push(rec);
+    centrals.push(centralRec(files[i].name, files[i].bytes));
+    offset += rec.length;
+  }
+  var cen = concat(centrals);
+  var endSig = Uint8Array.from([0x50,0x4b,0x05,0x06, 0,0, 0,0,
+    (files.length)&255,((files.length)>>8)&255, (files.length)&255,((files.length)>>8)&255,
+    cen.length&255,(cen.length>>8)&255,(cen.length>>16)&255,(cen.length>>24)&255,
+    offset&255,(offset>>8)&255,(offset>>16)&255,(offset>>24)&255, 0,0]);
+  var blob=new Blob([concat(locals), cen, endSig],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  return blob;
+}
   function exportXlsx(){
     var rows=rowsForExport();
     if(window.XLSX){ var ws=window.XLSX.utils.json_to_sheet(rows); var wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); var out=window.XLSX.write(wb,{bookType:'xlsx',type:'array'}); download(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'qr-log-'+ts()+'.xlsx'); }
