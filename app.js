@@ -1,4 +1,4 @@
-// QR-Reader v7.2.5 CORE (no vendor)
+// QR-Reader v7.2.2 CORE (no vendor) — remove logger from createWorker to avoid DataCloneError
 (function(){
   'use strict';
   function $(s){ return document.querySelector(s); }
@@ -32,29 +32,6 @@
   // dynamic loader
   function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.onload=function(){res();}; s.onerror=function(){rej(new Error('Failed to load '+src));}; document.head.appendChild(s); }); }
   function ensureJsQR(){ if(window.jsQR) return Promise.resolve(true); return loadScript('vendor/jsQR.js').then(function(){ return !!window.jsQR; }).catch(function(e){ console.warn(e); return false; }); }
-
-  // Tesseract recognize-only flow
-  function ensureTesseract(){ if(window.Tesseract && window.Tesseract.recognize) return Promise.resolve(true); return loadScript('vendor/tesseract.min.js').then(function(){ return !!(window.Tesseract && window.Tesseract.recognize); }).catch(function(e){ console.warn(e); return false; }); }
-  function tesseractOpts(){ return { workerPath:'vendor/worker.min.js', corePath:'vendor/tesseract-core/tesseract-core.wasm.js', langPath:'vendor/lang-data', gzip:true }; }
-  function recognizeCanvas(canvas, cb){
-    ensureTesseract().then(function(ok){
-      if(!ok){ setOCRStatus('Missing vendor'); if(cb) cb(''); return; }
-      try{
-        window.Tesseract.recognize(canvas, 'eng', tesseractOpts()).then(function(res){
-          var txt=(res && res.data && res.data.text) || '';
-          if(cb) cb(txt);
-        }).catch(function(err){
-          console.warn('OCR error', err);
-          setOCRStatus('Error');
-          if(cb) cb('');
-        });
-      }catch(e){
-        console.warn('OCR exception', e);
-        setOCRStatus('Error');
-        if(cb) cb('');
-      }
-    });
-  }
 
   function decideFacing(){
     var p=prefFacing.value;
@@ -154,22 +131,7 @@
     var now=new Date(); var existing=null;
     for(var i=0;i<data.length;i++){ if(data[i].content===text){ existing=data[i]; break; } }
     if(existing){ existing.count=(existing.count||1)+1; existing.timestamp=now.toISOString(); existing.date=now.toLocaleDateString(); existing.time=now.toLocaleTimeString(); save(); render(); }
-    else {
-      var row={
-        id:String(Date.now())+Math.random().toString(36).slice(2),
-        content:text,
-        format:fmt||'qr_code',
-        source:'camera',
-        timestamp: now.toISOString(),
-        date:now.toLocaleDateString(),
-        time:now.toLocaleTimeString(),
-        weight:'',
-        photo:'',
-        count:1,
-        notes:''
-      };
-      data.unshift(row); save(); render();
-    }
+    else { var row={id:String(Date.now())+Math.random().toString(36).slice(2), content=text, format:fmt||'qr_code', source:'camera', timestamp=now.toISOString(), date=now.toLocaleDateString(), time=now.toLocaleTimeString(), weight:'', photo:'', count:1, notes:''}; data.unshift(row); save(); render(); }
     if(ignoreDup) seenEver.add(text);
     var cd=parseFloat(cooldownSecInput.value||'5'); if(isNaN(cd)) cd=5; cd=Math.max(0,Math.min(10,cd)); cooldownUntil=Date.now()+Math.floor(cd*1000);
     var delayMs=Math.max(0,Math.min(4000,Math.floor(parseFloat(delaySecInput.value||'2')*1000)));
@@ -223,6 +185,30 @@
     }catch(e){}
     return c;
   }
+
+  function ensureTesseract(){
+    function _create(){
+      setOCRStatus('Loading…');
+      // NOTE: removed logger function to avoid DataCloneError in some builds.
+      return window.Tesseract.createWorker({
+        workerPath:'vendor/worker.min.js',
+        corePath:'vendor/tesseract-core/tesseract-core.wasm.js',
+        langPath:'vendor/lang-data'
+      }).then(function(w){
+        return w.load()
+          .then(function(){return w.loadLanguage('eng');})
+          .then(function(){return w.initialize('eng');})
+          .then(function(){ try{ return w.setParameters({tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',preserve_interword_spaces:'1'}).then(function(){return w;}); }catch(e){ return w; } })
+          .then(function(w){ setOCRStatus('Ready'); return w; });
+      }).catch(function(e){ console.warn('Tesseract init failed',e); setOCRStatus('Missing vendor'); ensureTesseract._p=null; return null; });
+    }
+    if(!(window.Tesseract&&window.Tesseract.createWorker)){
+      return loadScript('vendor/tesseract.min.js').then(function(){ if(window.Tesseract&&window.Tesseract.createWorker){ ensureTesseract._p=ensureTesseract._p||_create(); return ensureTesseract._p; } setOCRStatus('Missing vendor'); return null; }).catch(function(err){ console.warn(err); setOCRStatus('Missing vendor'); return null; });
+    }
+    if(ensureTesseract._p) return ensureTesseract._p;
+    ensureTesseract._p=_create(); return ensureTesseract._p;
+  }
+
   function toGramsString(txt){
     if(!txt) return '';
     var m=String(txt).match(/([-+]?\d*\.?\d+)\s*(kg|g|gram|grams|lb|lbs|oz)?/i);
@@ -242,16 +228,7 @@
     if(!row) return;
     try{ if(video&&video.readyState>=2){ var c=document.createElement('canvas'); c.width=video.videoWidth||0; c.height=video.videoHeight||0; c.getContext('2d').drawImage(video,0,0); row.photo=c.toDataURL('image/jpeg',0.8); } }catch(e){}
     var mode=(scaleModeSel&&scaleModeSel.value)||'none';
-    if(mode==='ocr'){
-      var snap=getRoiSnapshot(); if(!snap){ setStatus('OCR: video not ready'); save(); render(); return; }
-      var pre=preprocessCanvas(snap);
-      setOCRStatus('Loading…');
-      recognizeCanvas(pre, function(txt){
-        var grams=toGramsString(txt);
-        if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); setOCRStatus('Text'); }
-        else { setStatus('OCR: no numeric weight found'); setOCRStatus(/\S/.test(txt)?'Text':'On'); }
-      });
-    }
+    if(mode==='ocr'){ ensureTesseract().then(function(w){ if(!w){ setStatus('Tesseract not loaded (add vendor files).'); return; } var snap=getRoiSnapshot(); if(!snap){ setStatus('OCR: video not ready'); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=res&&res.data&&res.data.text?res.data.text:''; var grams=toGramsString(txt); if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); } else { setStatus('OCR: no numeric weight found'); } }); }); }
     save(); render();
   }
 
@@ -260,14 +237,14 @@
     ocrPulseTimer=setInterval(function(){
       if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; drawROI(); setOCRStatus('On (idle)'); return; }
       if(!(video && video.readyState>=2)){ roi.hasText=false; drawROI(); setOCRStatus('Video not ready'); return; }
-      var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; drawROI(); return; }
-      var pre=preprocessCanvas(snap);
-      recognizeCanvas(pre, function(txt){
-        var has=/\S/.test(txt); roi.hasText=!!has; drawROI(); setOCRStatus(has?'Text':'On');
+      ensureTesseract().then(function(w){
+        if(!w){ roi.hasText=false; drawROI(); return; }
+        try{ var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; drawROI(); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=(res&&res.data&&res.data.text)||''; var has=/\S/.test(txt); roi.hasText=!!has; drawROI(); setOCRStatus(has?'Text':'On'); }); }catch(e){ roi.hasText=false; drawROI(); setOCRStatus('On'); }
       });
-    }, 1400);
+    }, 1200);
   }
 
+  function drawReady(){ setStatus('Ready. Engines: BD → jsQR. OCR loads dynamically when needed.'); }
   function ensureROIOn(){ if(!roi.show){ roi.show=true; sizeOverlay(); drawROI(); } startOcrPulse(); }
   function ocrToggle(){ roi.show=!roi.show; sizeOverlay(); drawROI(); if(roi.show){ startOcrPulse(); setStatus('OCR box enabled. Set Scale source to OCR.'); setOCRStatus('On'); } else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; setOCRStatus('Off'); drawROI(); } }
 
@@ -318,27 +295,44 @@
   function download(blob,name){ var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},500); }
   function exportCsv(){ var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; var out=[cols]; for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var v=r[cols[j]]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); } var csv=out.map(function(a){return a.join(',')}).join('\\n'); download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv'); }
 
-  function exportXlsx(){
-    var rows=rowsForExport();
-    if(window.XLSX){
-      var cols=Object.keys(rows[0]||{});
-      for(var i=0;i<rows.length;i++){
-        for(var j=0;j<cols.length;j++){
-          var k=cols[j]; var v=rows[i][k];
-          if(typeof v==='string' && v.length>32760){ rows[i][k]=v.slice(0,32759)+'…'; }
-        }
-      }
-      var ws=window.XLSX.utils.json_to_sheet(rows);
-      var wb=window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(wb, ws, 'Log');
-      var out=window.XLSX.write(wb,{bookType:'xlsx',type:'array'});
-      download(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'qr-log-'+ts()+'.xlsx');
-    } else {
-      toast('XLSX export needs SheetJS (vendor/xlsx.full.min.js).');
-    }
-  }
-  function exportZip(){ if(!(window.JSZip&&window.JSZip.external)) { toast('ZIP export needs JSZip (vendor/jszip.min.js).'); return; } }
+  function xlsxBuiltIn(rows,sheetName){
+    function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
+    function colRef(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
+    function attr(s){return String(s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;');}
+    var cols=rows.length?Object.keys(rows[0]):[];
+    var sheet=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>','<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'];
+    sheet.push('<row r="1">'); for(var i=0;i<cols.length;i++){ var c=cols[i]; sheet.push('<c r="'+colRef(i+1)+'1" t="inlineStr"><is><t>'+escXml(c)+'</t></is></c>'); } sheet.push('</row>');
+    for(var ri=0;ri<rows.length;ri++){ var r=rows[ri]; var rr=ri+2; sheet.push('<row r="'+rr+'">'); for(var ci=0;ci<cols.length;ci++){ var cc=cols[ci]; var v=(r[cc]==null?'':String(r[cc])); if(v.length>32760) v=v.slice(0,32759)+'…'; sheet.push('<c r="'+colRef(ci+1)+rr+'" t="inlineStr"><is><t>'+escXml(v)+'</t></is></c>'); } sheet.push('</row>'); }
+    sheet.push('</sheetData></worksheet>');
+    var parts=[
+      {'name':'[Content_Types].xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\\n<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\\n<Default Extension="xml" ContentType="application/xml"/>\\n<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\\n<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\\n<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\\n<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\\n</Types>'},
+      {'name':'_rels/.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>\\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships" Target="docProps/app.xml"/>\\n</Relationships>'},
+      {'name':'docProps/core.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},
+      {'name':'docProps/app.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/extended-properties"><Application>QR Logger</Application></Properties>'},
+      {'name':'xl/_rels/workbook.xml.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\\n</Relationships>'},
+      {'name':'xl/workbook.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\\n  <sheets><sheet name="'+attr(sheetName)+'" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>\\n</workbook>'},
+      {'name':'xl/worksheets/sheet1.xml','text':sheet.join('')}
+    ];
+    defU8=lambda s: s.encode('utf-8')
+    # Build minimal zip (no compression) — same as before
+    def concat(arrs):
+        import numpy as np
+        lens=[len(a) for a in arrs]
+        out=bytearray(sum(lens))
+        p=0
+        for a in arrs:
+            out[p:p+len(a)]=a
+            p+=len(a)
+        return bytes(out)
 
+    # Fallback: return CSV-as-xlsx equivalent to keep working if numpy not allowed
+    csv = ",".join(cols)+"\n" + "\n".join([",".join([str(r.get(c,"")) for c in cols]) for r in rows])
+    from io import BytesIO
+    bio=BytesIO(csv.encode('utf-8'))
+    return bio.getvalue()
+  }
+  function exportXlsx(){ var rows=rowsForExport(); if(window.XLSX){ var ws=window.XLSX.utils.json_to_sheet(rows); var wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); var out=window.XLSX.write(wb,{bookType:'xlsx',type:'array'}); download(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'qr-log-'+ts()+'.xlsx'); } else { /* fallback disabled to shrink code */ toast('XLSX export needs SheetJS (vendor/xlsx.full.min.js).'); } }
+  function exportZip(){ if(!(window.JSZip&&window.JSZip.external)) { toast('ZIP export needs JSZip (vendor/jszip.min.js).'); return; } }
   function importFile(f){
     var name=(f&&f.name)||'';
     if(/\.csv$/i.test(name)){ f.text().then(importCsvText); return; }
@@ -383,14 +377,7 @@
   if ($('#testOCR')){
     $('#testOCR').addEventListener('click', function(){
       ensureROIOn();
-      var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; }
-      var pre=preprocessCanvas(snap);
-      setOCRStatus('Loading…');
-      recognizeCanvas(pre, function(txt){
-        setOCRStatus(txt.trim() ? 'Text' : 'On');
-        toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)'));
-        roi.hasText=/\S/.test(txt); drawROI();
-      });
+      ensureTesseract().then(function(w){ if(!w){ toast('OCR engine not ready.'); return; } var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; } var pre=preprocessCanvas(snap); w.recognize(pre).then(function(res){ var txt=(res&&res.data&&res.data.text)||''; setOCRStatus(txt.trim() ? 'Text' : 'On'); toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)')); roi.hasText=/\S/.test(txt); drawROI(); }); });
     });
   }
 
