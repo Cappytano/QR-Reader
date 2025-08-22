@@ -1,4 +1,4 @@
-// QR-Reader v7.2.5 CORE (no vendor)
+// QR-Reader v7.3.0 PATCH (app.js only, no vendor)
 (function(){
   'use strict';
   function $(s){ return document.querySelector(s); }
@@ -18,6 +18,7 @@
   var roi = { x:0.58, y:0.58, w:0.40, h:0.38, show:false, hasText:false };
   var ocrPulseTimer=null;
   var seenEver = new Set();
+  var lastOCRBoxes=[]; // NEW: OCR word/line boxes inside ROI
 
   function setStatus(t){ if(statusEl){ statusEl.textContent=t||''; } }
   function setOCRStatus(t){ if(ocrStatus){ ocrStatus.textContent='OCR: '+t; } }
@@ -33,25 +34,46 @@
   function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.onload=function(){res();}; s.onerror=function(){rej(new Error('Failed to load '+src));}; document.head.appendChild(s); }); }
   function ensureJsQR(){ if(window.jsQR) return Promise.resolve(true); return loadScript('vendor/jsQR.js').then(function(){ return !!window.jsQR; }).catch(function(e){ console.warn(e); return false; }); }
 
-  // Tesseract recognize-only flow
+  // Tesseract recognize-only flow (returns text + boxes)
   function ensureTesseract(){ if(window.Tesseract && window.Tesseract.recognize) return Promise.resolve(true); return loadScript('vendor/tesseract.min.js').then(function(){ return !!(window.Tesseract && window.Tesseract.recognize); }).catch(function(e){ console.warn(e); return false; }); }
   function tesseractOpts(){ return { workerPath:'vendor/worker.min.js', corePath:'vendor/tesseract-core/tesseract-core.wasm.js', langPath:'vendor/lang-data', gzip:true }; }
   function recognizeCanvas(canvas, cb){
     ensureTesseract().then(function(ok){
-      if(!ok){ setOCRStatus('Missing vendor'); if(cb) cb(''); return; }
+      if(!ok){ setOCRStatus('Missing vendor'); if(cb) cb('', []); return; }
       try{
         window.Tesseract.recognize(canvas, 'eng', tesseractOpts()).then(function(res){
-          var txt=(res && res.data && res.data.text) || '';
-          if(cb) cb(txt);
+          var txt = (res && res.data && res.data.text) || '';
+          var boxes = [];
+          var words = (res && res.data && Array.isArray(res.data.words)) ? res.data.words : [];
+          var lines = (!words.length && res && res.data && Array.isArray(res.data.lines)) ? res.data.lines : [];
+          var blocks= (!words.length && !lines.length && res && res.data && Array.isArray(res.data.blocks)) ? res.data.blocks : [];
+          function pushBox(b, conf){
+            if(!b) return;
+            var bb = b.bbox || b;
+            var x0 = (bb.x0!=null)?bb.x0:bb.left;
+            var y0 = (bb.y0!=null)?bb.y0:bb.top;
+            var x1 = (bb.x1!=null)?bb.x1:bb.right;
+            var y1 = (bb.y1!=null)?bb.y1:bb.bottom;
+            if([x0,y0,x1,y1].some(function(v){return typeof v!=='number' || isNaN(v);})){ return; }
+            boxes.push({x0:x0, y0:y0, x1:x1, y1:y1, conf:(b.confidence!=null?b.confidence:b.conf)||0});
+          }
+          if(words.length){
+            for(var i=0;i<words.length;i++){ pushBox(words[i]); if(boxes.length>50) break; }
+          } else if(lines.length){
+            for(var j=0;j<lines.length;j++){ pushBox(lines[j]); if(boxes.length>40) break; }
+          } else if(blocks.length){
+            for(var k=0;k<blocks.length;k++){ pushBox(blocks[k]); if(boxes.length>30) break; }
+          }
+          if(cb) cb(txt, boxes);
         }).catch(function(err){
           console.warn('OCR error', err);
           setOCRStatus('Error');
-          if(cb) cb('');
+          if(cb) cb('', []);
         });
       }catch(e){
         console.warn('OCR exception', e);
         setOCRStatus('Error');
-        if(cb) cb('');
+        if(cb) cb('', []);
       }
     });
   }
@@ -117,6 +139,7 @@
     if(scanTimer) clearTimeout(scanTimer);
     try{ octx.clearRect(0,0,overlay.width,overlay.height); }catch(_e){}
     if(ocrPulseTimer) clearInterval(ocrPulseTimer);
+    lastOCRBoxes=[];
     setOCRStatus('Off');
   }
 
@@ -196,7 +219,7 @@
     scanTimer=setTimeout(loopJsQR,160);
   }
 
-  // === ROI drawing ===
+  // === ROI drawing with OCR boxes ===
   function drawROI(){
     if(!octx) return;
     octx.clearRect(0,0,overlay.width,overlay.height);
@@ -213,6 +236,24 @@
     const s=9, pts=[[x,y],[x+w,y],[x,y+h],[x+w,y+h]];
     octx.fillStyle = octx.strokeStyle; octx.lineWidth=1;
     for(var i=0;i<pts.length;i++){ var p=pts[i]; octx.fillRect(Math.round(p[0]-s/2), Math.round(p[1]-s/2), s, s); octx.strokeRect(Math.round(p[0]-s/2), Math.round(p[1]-s/2), s, s); }
+    // OCR boxes
+    if (lastOCRBoxes && lastOCRBoxes.length){
+      var vw = video.videoWidth||0, vh = video.videoHeight||0;
+      var sw = Math.max(1, Math.floor(vw*roi.w));
+      var sh = Math.max(1, Math.floor(vh*roi.h));
+      octx.strokeStyle = 'rgba(56,189,248,0.95)';
+      octx.fillStyle   = 'rgba(56,189,248,0.10)';
+      octx.lineWidth   = 1.5;
+      for(var b=0;b<lastOCRBoxes.length;b++){
+        var bb = lastOCRBoxes[b];
+        var rx0 = x + (bb.x0/sw)*w;
+        var ry0 = y + (bb.y0/sh)*h;
+        var rw  = ((bb.x1-bb.x0)/sw)*w;
+        var rh  = ((bb.y1-bb.y0)/sh)*h;
+        octx.fillRect(Math.round(rx0), Math.round(ry0), Math.round(rw), Math.round(rh));
+        octx.strokeRect(Math.round(rx0), Math.round(ry0), Math.round(rw), Math.round(rh));
+      }
+    }
     octx.restore();
   }
   function preprocessCanvas(src){
@@ -246,10 +287,12 @@
       var snap=getRoiSnapshot(); if(!snap){ setStatus('OCR: video not ready'); save(); render(); return; }
       var pre=preprocessCanvas(snap);
       setOCRStatus('Loading…');
-      recognizeCanvas(pre, function(txt){
+      recognizeCanvas(pre, function(txt, boxes){
         var grams=toGramsString(txt);
         if(grams){ row.weight=grams; save(); render(); setStatus('Weight OCR: '+grams+' g'); toast('Captured weight: '+grams+' g'); setOCRStatus('Text'); }
         else { setStatus('OCR: no numeric weight found'); setOCRStatus(/\S/.test(txt)?'Text':'On'); }
+        lastOCRBoxes = boxes || [];
+        drawROI();
       });
     }
     save(); render();
@@ -258,18 +301,18 @@
   function startOcrPulse(){
     if(ocrPulseTimer) clearInterval(ocrPulseTimer);
     ocrPulseTimer=setInterval(function(){
-      if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; drawROI(); setOCRStatus('On (idle)'); return; }
-      if(!(video && video.readyState>=2)){ roi.hasText=false; drawROI(); setOCRStatus('Video not ready'); return; }
-      var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; drawROI(); return; }
+      if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); setOCRStatus('On (idle)'); return; }
+      if(!(video && video.readyState>=2)){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); setOCRStatus('Video not ready'); return; }
+      var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); return; }
       var pre=preprocessCanvas(snap);
-      recognizeCanvas(pre, function(txt){
-        var has=/\S/.test(txt); roi.hasText=!!has; drawROI(); setOCRStatus(has?'Text':'On');
+      recognizeCanvas(pre, function(txt, boxes){
+        var has=/\S/.test(txt); roi.hasText=!!has; lastOCRBoxes = boxes || []; drawROI(); setOCRStatus(has?'Text':'On');
       });
     }, 1400);
   }
 
   function ensureROIOn(){ if(!roi.show){ roi.show=true; sizeOverlay(); drawROI(); } startOcrPulse(); }
-  function ocrToggle(){ roi.show=!roi.show; sizeOverlay(); drawROI(); if(roi.show){ startOcrPulse(); setStatus('OCR box enabled. Set Scale source to OCR.'); setOCRStatus('On'); } else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; setOCRStatus('Off'); drawROI(); } }
+  function ocrToggle(){ roi.show=!roi.show; sizeOverlay(); drawROI(); if(roi.show){ startOcrPulse(); setStatus('OCR box enabled. Set Scale source to OCR.'); setOCRStatus('On'); } else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; lastOCRBoxes=[]; setOCRStatus('Off'); drawROI(); } }
 
   // ROI interactions
   ocrToggleBtn.addEventListener('click', ocrToggle);
@@ -277,7 +320,7 @@
   function norm(ev){ var r=overlay.getBoundingClientRect(); var p=('touches' in ev && ev.touches.length)?ev.touches[0]:ev; var nx=(p.clientX-r.left)/r.width, ny=(p.clientY-r.top)/r.height; return {nx:Math.max(0,Math.min(1,nx)),ny:Math.max(0,Math.min(1,ny))}; }
   function hit(nx,ny){ var m=0.02, inBox=(nx>=roi.x && ny>=roi.y && nx<=roi.x+roi.w && ny<=roi.y+roi.h); function near(ax,ay){return Math.abs(nx-ax)<=m&&Math.abs(ny-ay)<=m;} if(near(roi.x,roi.y))return'nw'; if(near(roi.x+roi.w,roi.y))return'ne'; if(near(roi.x,roi.y+roi.h))return'sw'; if(near(roi.x+roi.w,roi.y+roi.h))return'se'; if(inBox)return'move'; return null; }
   function startDrag(ev){ if(!roi.show) return; var p=norm(ev); var mode=hit(p.nx,p.ny); if(!mode) return; if(ev.preventDefault) ev.preventDefault(); dragging={mode:mode, ox:p.nx, oy:p.ny, rx:roi.x, ry:roi.y, rw:roi.w, rh:roi.h}; }
-  function moveDrag(ev){ if(!dragging) return; var p=norm(ev), dx=p.nx-dragging.ox, dy=p.ny-dragging.oy, minW=0.08, minH=0.08; if(dragging.mode==='move'){ roi.x=Math.max(0,Math.min(1-dragging.rw,dragging.rx+dx)); roi.y=Math.max(0,Math.min(1-dragging.rh,dragging.ry+dy)); } else { var x=dragging.rx, y=dragging.ry, w=dragging.rw, h=dragging.rh; if(dragging.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(dragging.ry+dy,dragging.ry+dragging.rh-minH)); h=(dragging.ry+dragging.rh)-y; } if(dragging.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-dragging.ry,dragging.rh+dy)); } if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(dragging.rx+dx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; } if(dragging.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-dragging.rx,dragging.rw+dx)); } roi.x=x; roi.y=y; roi.w=w; roi.h=h; } drawROI(); if(ev.preventDefault) ev.preventDefault(); }
+  function moveDrag(ev){ if(!dragging) return; var p=norm(ev), dx=p.nx-dragging.ox, dy=p.ny-dragging.oy, minW=0.08, minH=0.08; if(dragging.mode==='move'){ roi.x=Math.max(0,Math.min(1-dragging.rw,dragging.rx+dx)); roi.y=Math.max(0,Math.min(1-dragging.rh,dragging.ry+dy)); } else { var x=dragging.rx, y=dragging.ry, w=dragging.rw, h=dragging.rh; if(dragging.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(dragging.ry+dy,dragging.ry+dragging.rh-minH)); h=(dragging.ry+dragging.rh)-y; } if(dragging.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-dragging.ry,dragging.rh+dy)); } if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(dragging.rx+dx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; } if(dragging.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-dragging.rx,dragging.rw+dx)); } roi.x=x; roi.y=y; roi.w=w; roi.h=h; } lastOCRBoxes=[]; drawROI(); if(ev.preventDefault) ev.preventDefault(); }
   function endDrag(ev){ if(!dragging) return; dragging=null; if(ev.preventDefault) ev.preventDefault(); }
   overlay.addEventListener('mousedown', startDrag); overlay.addEventListener('mousemove', moveDrag); window.addEventListener('mouseup', endDrag);
   overlay.addEventListener('touchstart', startDrag, {passive:false}); overlay.addEventListener('touchmove', moveDrag, {passive:false}); overlay.addEventListener('touchend', endDrag, {passive:false}); overlay.addEventListener('touchcancel', endDrag, {passive:false});
@@ -386,10 +429,12 @@
       var snap=getRoiSnapshot(); if(!snap){ toast('Video not ready.'); return; }
       var pre=preprocessCanvas(snap);
       setOCRStatus('Loading…');
-      recognizeCanvas(pre, function(txt){
+      recognizeCanvas(pre, function(txt, boxes){
         setOCRStatus(txt.trim() ? 'Text' : 'On');
         toast('OCR sample: '+(txt.trim()?txt.trim().slice(0,80):'(no text)'));
-        roi.hasText=/\S/.test(txt); drawROI();
+        roi.hasText=/\S/.test(txt);
+        lastOCRBoxes = boxes || [];
+        drawROI();
       });
     });
   }
@@ -411,7 +456,7 @@
     scaleModeSel.addEventListener('change', function(){
       savePrefs({scaleMode: scaleModeSel.value});
       if(scaleModeSel.value==='ocr'){ if(!roi.show){ roi.show=true; } sizeOverlay(); drawROI(); setOCRStatus('On'); startOcrPulse(); }
-      else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; drawROI(); setOCRStatus('Off'); }
+      else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; lastOCRBoxes=[]; drawROI(); setOCRStatus('Off'); }
     });
   }
 
