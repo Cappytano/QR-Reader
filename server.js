@@ -1,5 +1,4 @@
 
-// Minimal local dev server (http). For camera, prefer https or http://localhost in Chrome/Edge.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
