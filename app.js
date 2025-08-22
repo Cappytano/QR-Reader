@@ -1,4 +1,4 @@
-// QR-Reader v7.3.2 PATCH (app.js only) — Add ZXing multi‑format engine; keep OCR & red outlines
+// QR-Reader v7.3.3 PATCH (app.js only) — Switch to ZXing **WASM** as multi‑format engine; keep OCR & red outlines
 (function(){
   'use strict';
   function $(s){ return document.querySelector(s); }
@@ -9,8 +9,7 @@
   var cameraSourceSel=$('#cameraSource');
   var delaySecInput=$('#delaySec'), scaleModeSel=$('#scaleMode');
   var exportXlsxBtn=$('#exportXlsx'), exportCsvBtn=$('#exportCsv'), exportZipBtn=$('#exportZip'), clearBtn=$('#clearBtn');
-  var toastEl=$('#toast'), ocrStatus=$('#ocrStatus');
-  var ocrToggleBtn=$('#ocrToggle'), testOCRBtn=$('#testOCR');
+  var toastEl=$('#toast'), ocrStatus=$('#ocrStatus'), testOCRBtn=$('#testOCR'), ocrToggleBtn=$('#ocrToggle');
 
   var stream=null, scanning=false, detector=null;
   var data=[]; var STORAGE_KEY='qrLoggerV7', PREF_KEY='qrPrefsV1';
@@ -41,21 +40,38 @@
   function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.onload=function(){res();}; s.onerror=function(){rej(new Error('Failed to load '+src));}; document.head.appendChild(s); }); }
   function ensureJsQR(){ if(window.jsQR) return Promise.resolve(true); return loadScript('vendor/jsQR.js').then(function(){ return !!window.jsQR; }).catch(function(e){ console.warn(e); return false; }); }
 
-  // ZXing UMD loader (library then browser wrapper)
-  function ensureZXing(){
-    if (window.ZXingBrowser && window.ZXing) return Promise.resolve(true);
-    var loadLib = window.ZXing ? Promise.resolve() : loadScript('vendor/zxing.min.js'); // @zxing/library UMD (renamed)
-    return loadLib.then(function(){
-      if (window.ZXingBrowser && window.ZXing) return true;
-      return loadScript('vendor/zxing-browser.min.js').then(function(){ return !!(window.ZXingBrowser && window.ZXing); });
-    }).catch(function(e){ console.warn('ZXing load error', e); return false; });
+  // === ZXing WASM loader ===
+  // Expect the following files in /vendor:
+  //   - vendor/zxing-wasm-reader.iife.js  (exposes window.ZXingWASM or similar)
+  //   - vendor/zxing_reader.wasm          (WASM binary; path configured below)
+  var ZXING_WASM_LOADED=false;
+  function ensureZXingWASM(){
+    if (ZXING_WASM_LOADED || (window.ZXingWASM && (window.ZXingWASM.readBarcodesFromImageData || window.ZXingWASM.instantiate))) {
+      ZXING_WASM_LOADED=true; return Promise.resolve(true);
+    }
+    return loadScript('vendor/zxing-wasm-reader.iife.js').then(function(){
+      // Try to set WASM url if the shim exposes a setter
+      try{
+        if (window.ZXingWASM && typeof window.ZXingWASM.setWasmUrl==='function'){
+          window.ZXingWASM.setWasmUrl('vendor/zxing_reader.wasm');
+        } else if (window.ZXingWASM && typeof window.ZXingWASM.instantiate==='function'){
+          // some builds require explicit instantiate with locateFile
+          if (!window.ZXingWASM._instantiating){
+            window.ZXingWASM._instantiating = true;
+            return window.ZXingWASM.instantiate({locateFile:function(path){ return path.endsWith('.wasm')?'vendor/zxing_reader.wasm':path; }}).then(function(){
+              ZXING_WASM_LOADED=true; return true;
+            }).catch(function(e){ console.warn('ZXingWASM instantiate failed', e); return false; });
+          }
+        }
+      }catch(e){ console.warn('ZXingWASM config', e); }
+      ZXING_WASM_LOADED=true; return true;
+    }).catch(function(e){ console.warn('ZXing WASM load error', e); return false; });
   }
 
   // === OCR paths ===
   function ensureTesseract(){ if(window.Tesseract) return Promise.resolve(true); return loadScript('vendor/tesseract.min.js').then(function(){ return !!window.Tesseract; }).catch(function(e){ console.warn(e); return false; }); }
   function tesseractOpts(){ return { workerPath:'vendor/worker.min.js', corePath:'vendor/tesseract-core/tesseract-core.wasm.js', langPath:'vendor/lang-data', gzip:true }; }
 
-  // Worker-based OCR
   function ensureWorker(){
     if(ocr.ready) return Promise.resolve(true);
     return ensureTesseract().then(function(ok){
@@ -72,9 +88,7 @@
   function recognizeSimple(canvas){
     return ensureTesseract().then(function(ok){
       if(!ok || !window.Tesseract || !window.Tesseract.recognize) return { text:'', boxes:[] };
-      return window.Tesseract.recognize(canvas, 'eng', tesseractOpts()).then(function(res){
-        return extractTextAndBoxes(res);
-      }).catch(function(){ return { text:'', boxes:[] }; });
+      return window.Tesseract.recognize(canvas, 'eng', tesseractOpts()).then(extractTextAndBoxes).catch(function(){ return { text:'', boxes:[] }; });
     });
   }
   function extractTextAndBoxes(res){
@@ -89,11 +103,7 @@
     }
     var d=res && res.data;
     var arrays=[(d&&d.words)||[], (d&&d.lines)||[], (d&&d.blocks)||[], (d&&d.symbols)||[]];
-    for(var a=0;a<arrays.length && boxes.length<60;a++){
-      var arr=arrays[a]; if(!Array.isArray(arr)||!arr.length) continue;
-      for(var i=0;i<arr.length && boxes.length<60;i++){ pushBox(arr[i]); }
-      if(boxes.length) break;
-    }
+    for(var a=0;a<arrays.length && boxes.length<60;a++){ var arr=arrays[a]; if(!Array.isArray(arr)||!arr.length) continue; for(var i=0;i<arr.length && boxes.length<60;i++){ pushBox(arr[i]); } if(boxes.length) break; }
     return { text:txt, boxes:boxes };
   }
   function upscaleForOCR(src){
@@ -101,18 +111,9 @@
     var w=Math.max(1,src.width*scale), h=Math.max(1,src.height*scale);
     var c=document.createElement('canvas'); c.width=w; c.height=h;
     var ctx=c.getContext('2d', { willReadFrequently:true });
-    ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(src, 0,0,w,h);
-    try{
-      var img=ctx.getImageData(0,0,w,h); var d=img.data, n=d.length;
-      var thresh=150, contrast=1.35, bias=12;
-      for(var i=0;i<n;i+=4){
-        var y=0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2];
-        y=(y-128)*contrast+128;
-        var v=(y>thresh?255:0);
-        if(v===0 && y>thresh-bias) v=255;
-        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
-      }
+    ctx.imageSmoothingEnabled=false; ctx.drawImage(src, 0,0,w,h);
+    try{ var img=ctx.getImageData(0,0,w,h), d=img.data, n=d.length, thresh=150, contrast=1.35, bias=12;
+      for(var i=0;i<n;i+=4){ var y=0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2]; y=(y-128)*contrast+128; var v=(y>thresh?255:0); if(v===0 && y>thresh-bias) v=255; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255; }
       ctx.putImageData(img,0,0);
     }catch(e){}
     return c;
@@ -120,16 +121,12 @@
   function recognizeCanvasSmart(canvas, cb){
     setOCRStatus('Loading…');
     ensureWorker().then(function(ok){
-      var pre = upscaleForOCR(canvas);
+      var pre=upscaleForOCR(canvas);
       if(ok && ocr.worker){
-        ocr.worker.recognize(pre).then(function(res){
-          var out = extractTextAndBoxes(res);
-          cb && cb(out.text, out.boxes);
-        }).catch(function(){
-          recognizeSimple(pre).then(function(out){ cb && cb(out.text, out.boxes); });
-        });
+        ocr.worker.recognize(pre).then(function(res){ var out=extractTextAndBoxes(res); cb&&cb(out.text,out.boxes); })
+          .catch(function(){ recognizeSimple(pre).then(function(out){ cb&&cb(out.text,out.boxes); }); });
       } else {
-        recognizeSimple(pre).then(function(out){ cb && cb(out.text, out.boxes); });
+        recognizeSimple(pre).then(function(out){ cb&&cb(out.text,out.boxes); });
       }
     });
   }
@@ -142,12 +139,7 @@
   }
   function updatePerm(){
     if(!('permissions' in navigator)) return;
-    try{
-      navigator.permissions.query({name:'camera'}).then(function(st){
-        if(permStateEl){ permStateEl.textContent='Permission: '+st.state; }
-        st.onchange = function(){ if(permStateEl){ permStateEl.textContent='Permission: '+st.state; } };
-      });
-    }catch(e){}
+    try{ navigator.permissions.query({name:'camera'}).then(function(st){ if(permStateEl){ permStateEl.textContent='Permission: '+st.state; } st.onchange=function(){ if(permStateEl){ permStateEl.textContent='Permission: '+st.state; } }; }); }catch(e){}
   }
   function enumerateCams(){
     if(!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices)) return Promise.resolve([]);
@@ -160,28 +152,22 @@
     }).catch(function(e){ setStatus('enumerateDevices failed: '+e.message); return []; });
   }
   function requestPermission(){
-    try{
-      setStatus('Requesting camera permission…');
-      navigator.mediaDevices.getUserMedia({video:decideFacing(),audio:false}).then(function(s){
-        var tracks=s.getTracks(); for(var i=0;i<tracks.length;i++) tracks[i].stop();
-        setStatus('Permission granted.'); updatePerm(); enumerateCams();
-      }).catch(function(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); });
-    }catch(e){ setStatus('Permission error: '+(e.message||e)); }
+    try{ setStatus('Requesting camera permission…'); navigator.mediaDevices.getUserMedia({video:decideFacing(),audio:false}).then(function(s){ var tracks=s.getTracks(); for(var i=0;i<tracks.length;i++) tracks[i].stop(); setStatus('Permission granted.'); updatePerm(); enumerateCams(); }).catch(function(e){ setStatus('Permission request failed: '+(e.name||'')+' '+(e.message||e)); }); }catch(e){ setStatus('Permission error: '+(e.message||e)); }
   }
 
   // === Overlay sizing (DPR-aware) ===
   function sizeOverlay(){
     if(!video || !overlay || !octx) return;
-    const r = video.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
-    overlay.style.width  = r.width + 'px'; overlay.style.height = r.height + 'px';
-    overlay.width  = Math.max(1, Math.round(r.width  * dpr)); overlay.height = Math.max(1, Math.round(r.height * dpr));
-    octx.setTransform(dpr, 0, 0, dpr, 0, 0); drawROI();
+    const r=video.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+    overlay.style.width=r.width+'px'; overlay.style.height=r.height+'px';
+    overlay.width=Math.max(1,Math.round(r.width*dpr)); overlay.height=Math.max(1,Math.round(r.height*dpr));
+    octx.setTransform(dpr,0,0,dpr,0,0); drawROI();
   }
   window.addEventListener('resize', sizeOverlay);
 
   function useStream(s,label){
     stop(); stream=s; video.srcObject=stream;
-    video.play().then(function(){ var track=stream.getVideoTracks()[0]; var st=track?track.getSettings():{}; setStatus((label||'Camera')+' started ('+(st.width||'?')+'×'+(st.height||'?')+')'); sizeOverlay(); initScanner(); }).catch(function(e){ setStatus('Video play failed: '+e.message); });
+    video.play().then(function(){ var track=stream.getVideoTracks()[0], st=track?track.getSettings():{}; setStatus((label||'Camera')+' started ('+(st.width||'?')+'×'+(st.height||'?')+')'); sizeOverlay(); initScanner(); }).catch(function(e){ setStatus('Video play failed: '+e.message); });
   }
   function startFromSelection(){
     if(cameraSourceSel.value==='remote'){ setStatus('Remote camera active (see remote.js).'); return; }
@@ -199,9 +185,8 @@
     setOCRStatus('Off');
   }
 
-  // === ENGINE SELECTION: BD → ZXing → jsQR ===
+  // === ENGINE SELECTION: BD → ZXing WASM → jsQR ===
   function initScanner(){
-    // 1) Native Shape Detection API (if available)
     if('BarcodeDetector' in window){
       try{
         var desired=['qr_code','data_matrix','aztec','pdf417','code_128','code_39','code_93','codabar','itf','ean_13','ean_8','upc_a','upc_e'];
@@ -222,19 +207,17 @@
           scanning=true; loopBD();
         }
         return;
-      }catch(e){ /* continue to ZXing */ }
+      }catch(e){ /* go to WASM */ }
     }
-    // 2) ZXing multi-format
-    ensureZXing().then(function(ok){
+    ensureZXingWASM().then(function(ok){
       if(ok){
-        if(enginePill) enginePill.textContent='Engine: ZXing';
-        initZXing(); scanning=true; loopZXing(); return;
+        if(enginePill) enginePill.textContent='Engine: ZXing WASM';
+        scanning=true; loopWASM(); return;
       }
-      // 3) jsQR QR-only
       ensureJsQR().then(function(ok2){
         if(ok2 && window.jsQR){ if(enginePill) enginePill.textContent='Engine: jsQR'; scanning=true; loopJsQR(); return; }
         if(enginePill) enginePill.textContent='Engine: none';
-        setStatus('No scanning engine available. Add vendor/jsQR.js or enable Shape Detection.');
+        setStatus('No scanning engine available. Add vendor files or enable Shape Detection.');
       });
     });
   }
@@ -246,50 +229,48 @@
     if(!scanning||!video||video.readyState<2){ scanTimer=setTimeout(loopBD,160); return; }
     if(inCooldown()){ scanTimer=setTimeout(loopBD,260); return; }
     detector.detect(video).then(function(res){
-      if(res&&res.length){
-        var c=res[0]; var text=c.rawValue||'';
-        if(text){ handleDetection(text, c.format||''); scanTimer=setTimeout(loopBD,220); return; }
-      }
+      if(res&&res.length){ var c=res[0]; var text=c.rawValue||''; if(text){ handleDetection(text, c.format||''); scanTimer=setTimeout(loopBD,220); return; } }
       scanTimer=setTimeout(loopBD,140);
     }).catch(function(){ scanTimer=setTimeout(loopBD,160); });
   }
 
-  // === ZXing reader and loop ===
-  var zxingReader=null;
-  function initZXing(){
-    try{
-      var BarcodeFormat   = window.ZXing.BarcodeFormat;
-      var DecodeHintType  = window.ZXing.DecodeHintType;
-      var formats=[
-        BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX, BarcodeFormat.AZTEC, BarcodeFormat.PDF_417,
-        BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93,
-        BarcodeFormat.CODABAR, BarcodeFormat.ITF, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
-        BarcodeFormat.UPC_A, BarcodeFormat.UPC_E
-      ];
-      var hints=new Map();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-      hints.set(DecodeHintType.TRY_HARDER, true);
-      zxingReader = new window.ZXingBrowser.BrowserMultiFormatReader(hints, {});
-    }catch(e){ console.warn('ZXing init error', e); zxingReader=null; }
-  }
+  // === ZXing WASM loop ===
   var sample=document.createElement('canvas'), sctx=sample.getContext('2d',{willReadFrequently:true});
-  function loopZXing(){
-    if(!scanning||!video||video.readyState<2){ scanTimer=setTimeout(loopZXing,160); return; }
-    if(inCooldown()){ scanTimer=setTimeout(loopZXing,260); return; }
-    var vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh){ scanTimer=setTimeout(loopZXing,160); return; }
+  function wasmDecodeFromImageData(imgData){
+    try{
+      // Preferred API: ZXingWASM.readBarcodesFromImageData
+      if (window.ZXingWASM && typeof window.ZXingWASM.readBarcodesFromImageData==='function'){
+        return window.ZXingWASM.readBarcodesFromImageData(imgData, {
+          tryHarder:true,
+          formats:['qr_code','data_matrix','aztec','pdf417','code_128','code_39','code_93','codabar','itf','ean_13','ean_8','upc_a','upc_e'],
+          maxNumberOfSymbols:1
+        });
+      }
+      // Alternate API: ZXingWASM.decode (some builds)
+      if (window.ZXingWASM && typeof window.ZXingWASM.decode==='function'){
+        return Promise.resolve(window.ZXingWASM.decode(imgData.data, imgData.width, imgData.height));
+      }
+    }catch(e){}
+    return Promise.reject(new Error('ZXingWASM API not found'));
+  }
+  function loopWASM(){
+    if(!scanning||!video||video.readyState<2){ scanTimer=setTimeout(loopWASM,160); return; }
+    if(inCooldown()){ scanTimer=setTimeout(loopWASM,260); return; }
+    var vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh){ scanTimer=setTimeout(loopWASM,160); return; }
 
     var MAXW=1024, scale=vw>MAXW?(MAXW/vw):1, sw=Math.max(1,Math.floor(vw*scale)), sh=Math.max(1,Math.floor(vh*scale));
     sample.width=sw; sample.height=sh; sctx.imageSmoothingEnabled=false; sctx.drawImage(video,0,0,sw,sh);
+    var id;
+    try{ id=sctx.getImageData(0,0,sw,sh); }catch(_e){ scanTimer=setTimeout(loopWASM,140); return; }
 
-    try{
-      var res = zxingReader && zxingReader.decodeFromCanvas(sample);
-      if(res && res.getText){
-        var fmt = (res.getBarcodeFormat && String(res.getBarcodeFormat())) || '';
-        handleDetection(res.getText(), fmt);
-        scanTimer=setTimeout(loopZXing,220); return;
+    wasmDecodeFromImageData(id).then(function(res){
+      var arr = Array.isArray(res)?res:(res&&res.barcodes?res.barcodes:[]);
+      if(arr && arr.length){
+        var r=arr[0]; var txt=r.text||r.rawValue||r.data||''; var fmt=r.format||r.symbology||'';
+        if(txt){ handleDetection(txt, fmt); scanTimer=setTimeout(loopWASM,220); return; }
       }
-    }catch(_e){ /* NotFoundException typical when no code this frame */ }
-    scanTimer=setTimeout(loopZXing,140);
+      scanTimer=setTimeout(loopWASM,140);
+    }).catch(function(){ scanTimer=setTimeout(loopWASM,140); });
   }
 
   // === jsQR loop (QR-only) ===
@@ -299,11 +280,7 @@
     var vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh){ scanTimer=setTimeout(loopJsQR,160); return; }
     var MAXW=640, scale=vw>MAXW?(MAXW/vw):1, sw=Math.max(1,Math.floor(vw*scale)), sh=Math.max(1,Math.floor(vh*scale));
     sample.width=sw; sample.height=sh; sctx.imageSmoothingEnabled=false; sctx.drawImage(video,0,0,sw,sh);
-    try{
-      var id=sctx.getImageData(0,0,sw,sh);
-      var q=window.jsQR && window.jsQR(id.data, sw, sh, {inversionAttempts:'attemptBoth'});
-      if(q&&q.data){ handleDetection(q.data,'qr_code'); scanTimer=setTimeout(loopJsQR,220); return; }
-    }catch(e){}
+    try{ var id=sctx.getImageData(0,0,sw,sh); var q=window.jsQR && window.jsQR(id.data, sw, sh, {inversionAttempts:'attemptBoth'}); if(q&&q.data){ handleDetection(q.data,'qr_code'); scanTimer=setTimeout(loopJsQR,220); return; } }catch(e){}
     scanTimer=setTimeout(loopJsQR,160);
   }
 
@@ -357,7 +334,7 @@
       var vw = video.videoWidth||0, vh = video.videoHeight||0;
       var sw = Math.max(1, Math.floor(vw*roi.w));
       var sh = Math.max(1, Math.floor(vh*roi.h));
-      octx.strokeStyle = 'rgba(239,68,68,0.98)'; // red outline
+      octx.strokeStyle = 'rgba(239,68,68,0.98)';
       octx.lineWidth   = 2;
       octx.shadowColor = 'rgba(0,0,0,0.55)';
       octx.shadowBlur  = 2;
@@ -394,13 +371,7 @@
 
   function captureWeightAndPhoto(row){
     if(!row) return;
-    try{
-      if(video&&video.readyState>=2){
-        var c=document.createElement('canvas'); c.width=video.videoWidth||0; c.height=video.videoHeight||0;
-        c.getContext('2d').drawImage(video,0,0);
-        row.photo=c.toDataURL('image/jpeg',0.8);
-      }
-    }catch(e){}
+    try{ if(video&&video.readyState>=2){ var c=document.createElement('canvas'); c.width=video.videoWidth||0; c.height=video.videoHeight||0; c.getContext('2d').drawImage(video,0,0); row.photo=c.toDataURL('image/jpeg',0.8); } }catch(e){}
     var mode=(scaleModeSel&&scaleModeSel.value)||'none';
     if(mode==='ocr'){
       var snap=getRoiSnapshot(); if(!snap){ setStatus('OCR: video not ready'); save(); render(); return; }
@@ -415,25 +386,25 @@
     save(); render();
   }
 
-  // ROI + interactions
+  // ROI interactions
+  function startOcrPulse(){
+    if(ocrPulseTimer) clearInterval(ocrPulseTimer);
+    ocrPulseTimer=setInterval(function(){
+      if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); setOCRStatus('On (idle)'); return; }
+      if(!(video && video.readyState>=2)){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); setOCRStatus('Video not ready'); return; }
+      var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); return; }
+      recognizeCanvasSmart(snap, function(txt, boxes){
+        var has=/\S/.test(txt); roi.hasText=!!has; lastOCRBoxes = boxes || []; drawROI(); if(has){ setOCRStatus('Text ('+lastOCRBoxes.length+')'); } else { setOCRStatus('On'); }
+      });
+    }, 1500);
+  }
   function ensureROIOn(){ if(!roi.show){ roi.show=true; sizeOverlay(); drawROI(); } startOcrPulse(); }
   function ocrToggle(){ roi.show=!roi.show; sizeOverlay(); drawROI(); if(roi.show){ startOcrPulse(); setStatus('OCR box enabled. Set Scale source to OCR.'); setOCRStatus('On'); } else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; lastOCRBoxes=[]; setOCRStatus('Off'); drawROI(); } }
   var dragging=null;
   function norm(ev){ var r=overlay.getBoundingClientRect(); var p=('touches' in ev && ev.touches.length)?ev.touches[0]:ev; var nx=(p.clientX-r.left)/r.width, ny=(p.clientY-r.top)/r.height; return {nx:Math.max(0,Math.min(1,nx)),ny:Math.max(0,Math.min(1,ny))}; }
   function hit(nx,ny){ var m=0.02, inBox=(nx>=roi.x && ny>=roi.y && nx<=roi.x+roi.w && ny<=roi.y+roi.h); function near(ax,ay){return Math.abs(nx-ax)<=m&&Math.abs(ny-ay)<=m;} if(near(roi.x,roi.y))return'nw'; if(near(roi.x+roi.w,roi.y))return'ne'; if(near(roi.x,roi.y+roi.h))return'sw'; if(near(roi.x+roi.w,roi.y+roi.h))return'se'; if(inBox)return'move'; return null; }
   function startDrag(ev){ if(!roi.show) return; var p=norm(ev); var mode=hit(p.nx,p.ny); if(!mode) return; if(ev.preventDefault) ev.preventDefault(); dragging={mode:mode, ox:p.nx, oy:p.ny, rx:roi.x, ry:roi.y, rw:roi.w, rh:roi.h}; }
-  function moveDrag(ev){ if(!dragging) return; var p=norm(ev), dx=p.nx-dragging.ox, dy=p.ny-dragging.oy, minW=0.08, minH=0.08;
-    if(dragging.mode==='move'){ roi.x=Math.max(0,Math.min(1-dragging.rw,dragging.rx+dx)); roi.y=Math.max(0,Math.min(1-dragging.rh,dragging.ry+dy)); }
-    else {
-      var x=dragging.rx, y=dragging.ry, w=dragging.rw, h=dragging.rh;
-      if(dragging.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(dragging.ry+dy,dragging.ry+dragging.rh-minH)); h=(dragging.ry+dragging.rh)-y; }
-      if(dragging.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-dragging.ry,dragging.rh+dy)); }
-      if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(dragging.rx+dx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; }
-      if(dragging.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-dragging.rx,dragging.rw+dx)); }
-      roi.x=x; roi.y=y; roi.w=w; roi.h=h;
-    }
-    lastOCRBoxes=[]; drawROI(); if(ev.preventDefault) ev.preventDefault();
-  }
+  function moveDrag(ev){ if(!dragging) return; var p=norm(ev), dx=p.nx-dragging.ox, dy=p.ny-dragging.oy, minW=0.08, minH=0.08; if(dragging.mode==='move'){ roi.x=Math.max(0,Math.min(1-dragging.rw,dragging.rx+dx)); roi.y=Math.max(0,Math.min(1-dragging.rh,dragging.ry+dy)); } else { var x=dragging.rx, y=dragging.ry, w=dragging.rw, h=dragging.rh; if(dragging.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(dragging.ry+dy,dragging.ry+dragging.rh-minH)); h=(dragging.ry+dragging.rh)-y; } if(dragging.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-dragging.ry,dragging.rh+dy)); } if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(dragging.rx+dx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; } if(dragging.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-dragging.rx,dragging.rw+dx)); } roi.x=x; roi.y=y; roi.w=w; roi.h=h; } lastOCRBoxes=[]; drawROI(); if(ev.preventDefault) ev.preventDefault(); }
   function endDrag(ev){ if(!dragging) return; dragging=null; if(ev.preventDefault) ev.preventDefault(); }
   overlay.addEventListener('mousedown', startDrag); overlay.addEventListener('mousemove', moveDrag); window.addEventListener('mouseup', endDrag);
   overlay.addEventListener('touchstart', startDrag, {passive:false}); overlay.addEventListener('touchmove', moveDrag, {passive:false}); overlay.addEventListener('touchend', endDrag, {passive:false}); overlay.addEventListener('touchcancel', endDrag, {passive:false});
@@ -506,7 +477,7 @@
     toast('Unsupported file type.');
   }
   function importCsvText(text){
-    var lines=text.split(/\\r?\\n/); if(!lines.length) return;
+    var lines=text.split(/\r?\n/); if(!lines.length) return;
     for(var i=1;i<lines.length;i++){
       var L=lines[i]; if(!L) continue;
       var cells=L.match(/("([^"]|"")*"|[^,]+)/g) || [];
@@ -542,7 +513,7 @@
         roi.hasText=/\S/.test(txt);
         lastOCRBoxes = boxes || [];
         drawROI();
-        var msg = txt.trim()? txt.trim().slice(0,120).replace(/\\s+/g,' ') : '(no text)';
+        var msg = txt.trim()? txt.trim().slice(0,120).replace(/\s+/g,' ') : '(no text)';
         toast('OCR sample: '+msg);
       });
     });
@@ -569,18 +540,5 @@
     });
   }
 
-  load(); render(); enumerateCams(); setTimeout(function(){ setStatus('Ready. Engines: BD → ZXing → jsQR'); }, 0);
-
-  // OCR heartbeat
-  function startOcrPulse(){
-    if(ocrPulseTimer) clearInterval(ocrPulseTimer);
-    ocrPulseTimer=setInterval(function(){
-      if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); setOCRStatus('On (idle)'); return; }
-      if(!(video && video.readyState>=2)){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); setOCRStatus('Video not ready'); return; }
-      var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; lastOCRBoxes=[]; drawROI(); return; }
-      recognizeCanvasSmart(snap, function(txt, boxes){
-        var has=/\S/.test(txt); roi.hasText=!!has; lastOCRBoxes = boxes || []; drawROI(); if(has){ setOCRStatus('Text ('+lastOCRBoxes.length+')'); } else { setOCRStatus('On'); }
-      });
-    }, 1500);
-  }
+  load(); render(); enumerateCams(); setTimeout(function(){ setStatus('Ready. Engines: BD → ZXing WASM → jsQR'); }, 0);
 })();
