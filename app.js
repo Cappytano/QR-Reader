@@ -1,4 +1,4 @@
-// QR-Reader v7.3.3 PATCH (app.js only) — Switch to ZXing **WASM** as multi‑format engine; keep OCR & red outlines
+// QR-Reader v7.3.3a PATCH (app.js only) — Robust Tesseract init across versions; keep ZXing WASM + red OCR boxes
 (function(){
   'use strict';
   function $(s){ return document.querySelector(s); }
@@ -18,7 +18,7 @@
   var ocrPulseTimer=null;
   var seenEver = new Set();
   var lastOCRBoxes=[];
-  var ocr = { worker:null, ready:false, usingWorker:false };
+  var ocr = { worker:null, ready:false, usingWorker:false, failedWorker:false };
 
   function setStatus(t){ if(statusEl){ statusEl.textContent=t||''; } }
   function setOCRStatus(t){ if(ocrStatus){ ocrStatus.textContent='OCR: '+t; } }
@@ -41,21 +41,16 @@
   function ensureJsQR(){ if(window.jsQR) return Promise.resolve(true); return loadScript('vendor/jsQR.js').then(function(){ return !!window.jsQR; }).catch(function(e){ console.warn(e); return false; }); }
 
   // === ZXing WASM loader ===
-  // Expect the following files in /vendor:
-  //   - vendor/zxing-wasm-reader.iife.js  (exposes window.ZXingWASM or similar)
-  //   - vendor/zxing_reader.wasm          (WASM binary; path configured below)
   var ZXING_WASM_LOADED=false;
   function ensureZXingWASM(){
     if (ZXING_WASM_LOADED || (window.ZXingWASM && (window.ZXingWASM.readBarcodesFromImageData || window.ZXingWASM.instantiate))) {
       ZXING_WASM_LOADED=true; return Promise.resolve(true);
     }
     return loadScript('vendor/zxing-wasm-reader.iife.js').then(function(){
-      // Try to set WASM url if the shim exposes a setter
       try{
         if (window.ZXingWASM && typeof window.ZXingWASM.setWasmUrl==='function'){
           window.ZXingWASM.setWasmUrl('vendor/zxing_reader.wasm');
         } else if (window.ZXingWASM && typeof window.ZXingWASM.instantiate==='function'){
-          // some builds require explicit instantiate with locateFile
           if (!window.ZXingWASM._instantiating){
             window.ZXingWASM._instantiating = true;
             return window.ZXingWASM.instantiate({locateFile:function(path){ return path.endsWith('.wasm')?'vendor/zxing_reader.wasm':path; }}).then(function(){
@@ -68,29 +63,63 @@
     }).catch(function(e){ console.warn('ZXing WASM load error', e); return false; });
   }
 
-  // === OCR paths ===
+  // === OCR (Tesseract) ===
   function ensureTesseract(){ if(window.Tesseract) return Promise.resolve(true); return loadScript('vendor/tesseract.min.js').then(function(){ return !!window.Tesseract; }).catch(function(e){ console.warn(e); return false; }); }
   function tesseractOpts(){ return { workerPath:'vendor/worker.min.js', corePath:'vendor/tesseract-core/tesseract-core.wasm.js', langPath:'vendor/lang-data', gzip:true }; }
 
   function ensureWorker(){
-    if(ocr.ready) return Promise.resolve(true);
+    if(ocr.ready || ocr.failedWorker) return Promise.resolve(ocr.ready);
     return ensureTesseract().then(function(ok){
-      if(!ok || !window.Tesseract || !window.Tesseract.createWorker) return false;
-      try{ ocr.worker = window.Tesseract.createWorker(tesseractOpts()); }catch(e){ console.warn('createWorker failed', e); return false; }
-      return ocr.worker.load()
-        .then(function(){ return ocr.worker.loadLanguage('eng'); })
-        .then(function(){ return ocr.worker.initialize('eng'); })
-        .then(function(){ return ocr.worker.setParameters({ tessedit_char_whitelist:'0123456789.kggrmlbozOZ', tessedit_pageseg_mode:'7', preserve_interword_spaces:'1', user_defined_dpi:'300' }); })
-        .then(function(){ ocr.ready=true; ocr.usingWorker=true; setOCRStatus('Ready (worker)'); return true; })
-        .catch(function(err){ console.warn('worker init error', err); ocr.worker=null; ocr.ready=false; ocr.usingWorker=false; return false; });
+      if(!ok || !window.Tesseract || typeof window.Tesseract.createWorker!=='function'){
+        // No worker API in this build; skip to simple mode
+        ocr.failedWorker = true; return false;
+      }
+      var created;
+      try{ created = window.Tesseract.createWorker(tesseractOpts()); }
+      catch(e){ console.warn('createWorker threw', e); ocr.failedWorker = true; return false; }
+
+      // Some builds return a Promise<worker>, others return worker directly
+      var prom = (created && typeof created.then==='function') ? created : Promise.resolve(created);
+      return prom.then(function(w){
+        if(!w || typeof w.load!=='function'){ ocr.failedWorker = true; return false; }
+        ocr.worker = w;
+        return ocr.worker.load()
+          .then(function(){ return ocr.worker.loadLanguage('eng'); })
+          .then(function(){ return ocr.worker.initialize('eng'); })
+          .then(function(){
+            // setParameters may not exist on older builds
+            if (typeof ocr.worker.setParameters==='function'){
+              return ocr.worker.setParameters({
+                tessedit_char_whitelist:'0123456789.kggrmlbozOZ',
+                tessedit_pageseg_mode:'7',
+                preserve_interword_spaces:'1',
+                user_defined_dpi:'300'
+              }).catch(function(){ /* ignore */ });
+            }
+          })
+          .then(function(){ ocr.ready=true; ocr.usingWorker=true; setOCRStatus('Ready (worker)'); return true; })
+          .catch(function(err){ console.warn('worker init error', err); ocr.worker=null; ocr.ready=false; ocr.usingWorker=false; ocr.failedWorker=true; return false; });
+      }).catch(function(err){ console.warn('createWorker promise failed', err); ocr.failedWorker=true; return false; });
     });
   }
+
   function recognizeSimple(canvas){
     return ensureTesseract().then(function(ok){
-      if(!ok || !window.Tesseract || !window.Tesseract.recognize) return { text:'', boxes:[] };
-      return window.Tesseract.recognize(canvas, 'eng', tesseractOpts()).then(extractTextAndBoxes).catch(function(){ return { text:'', boxes:[] }; });
+      if(!ok || !window.Tesseract || typeof window.Tesseract.recognize!=='function') return { text:'', boxes:[] };
+      // Try v2+ signature first: (image, 'eng', options)
+      return window.Tesseract.recognize(canvas, 'eng', tesseractOpts())
+        .then(extractTextAndBoxes)
+        .catch(function(){
+          // Fallback to v1 signature: (image, options) with {lang:'eng'}
+          try{
+            return window.Tesseract.recognize(canvas, { lang:'eng' }).then(extractTextAndBoxes).catch(function(){ return { text:'', boxes:[] }; });
+          }catch(_e){
+            return { text:'', boxes:[] };
+          }
+        });
     });
   }
+
   function extractTextAndBoxes(res){
     var txt=(res && res.data && res.data.text)||'';
     var boxes=[];
@@ -103,9 +132,14 @@
     }
     var d=res && res.data;
     var arrays=[(d&&d.words)||[], (d&&d.lines)||[], (d&&d.blocks)||[], (d&&d.symbols)||[]];
-    for(var a=0;a<arrays.length && boxes.length<60;a++){ var arr=arrays[a]; if(!Array.isArray(arr)||!arr.length) continue; for(var i=0;i<arr.length && boxes.length<60;i++){ pushBox(arr[i]); } if(boxes.length) break; }
+    for(var a=0;a<arrays.length && boxes.length<60;a++){
+      var arr=arrays[a]; if(!Array.isArray(arr)||!arr.length) continue;
+      for(var i=0;i<arr.length && boxes.length<60;i++){ pushBox(arr[i]); }
+      if(boxes.length) break;
+    }
     return { text:txt, boxes:boxes };
   }
+
   function upscaleForOCR(src){
     var scale=(src.width*src.height<180*120)?3:2;
     var w=Math.max(1,src.width*scale), h=Math.max(1,src.height*scale);
@@ -118,11 +152,12 @@
     }catch(e){}
     return c;
   }
+
   function recognizeCanvasSmart(canvas, cb){
     setOCRStatus('Loading…');
     ensureWorker().then(function(ok){
       var pre=upscaleForOCR(canvas);
-      if(ok && ocr.worker){
+      if(ok && ocr.worker && typeof ocr.worker.recognize==='function'){
         ocr.worker.recognize(pre).then(function(res){ var out=extractTextAndBoxes(res); cb&&cb(out.text,out.boxes); })
           .catch(function(){ recognizeSimple(pre).then(function(out){ cb&&cb(out.text,out.boxes); }); });
       } else {
@@ -238,7 +273,6 @@
   var sample=document.createElement('canvas'), sctx=sample.getContext('2d',{willReadFrequently:true});
   function wasmDecodeFromImageData(imgData){
     try{
-      // Preferred API: ZXingWASM.readBarcodesFromImageData
       if (window.ZXingWASM && typeof window.ZXingWASM.readBarcodesFromImageData==='function'){
         return window.ZXingWASM.readBarcodesFromImageData(imgData, {
           tryHarder:true,
@@ -246,7 +280,6 @@
           maxNumberOfSymbols:1
         });
       }
-      // Alternate API: ZXingWASM.decode (some builds)
       if (window.ZXingWASM && typeof window.ZXingWASM.decode==='function'){
         return Promise.resolve(window.ZXingWASM.decode(imgData.data, imgData.width, imgData.height));
       }
@@ -257,12 +290,9 @@
     if(!scanning||!video||video.readyState<2){ scanTimer=setTimeout(loopWASM,160); return; }
     if(inCooldown()){ scanTimer=setTimeout(loopWASM,260); return; }
     var vw=video.videoWidth||0, vh=video.videoHeight||0; if(!vw||!vh){ scanTimer=setTimeout(loopWASM,160); return; }
-
     var MAXW=1024, scale=vw>MAXW?(MAXW/vw):1, sw=Math.max(1,Math.floor(vw*scale)), sh=Math.max(1,Math.floor(vh*scale));
     sample.width=sw; sample.height=sh; sctx.imageSmoothingEnabled=false; sctx.drawImage(video,0,0,sw,sh);
-    var id;
-    try{ id=sctx.getImageData(0,0,sw,sh); }catch(_e){ scanTimer=setTimeout(loopWASM,140); return; }
-
+    var id; try{ id=sctx.getImageData(0,0,sw,sh); }catch(_e){ scanTimer=setTimeout(loopWASM,140); return; }
     wasmDecodeFromImageData(id).then(function(res){
       var arr = Array.isArray(res)?res:(res&&res.barcodes?res.barcodes:[]);
       if(arr && arr.length){
@@ -386,7 +416,7 @@
     save(); render();
   }
 
-  // ROI interactions
+  // ROI + interactions
   function startOcrPulse(){
     if(ocrPulseTimer) clearInterval(ocrPulseTimer);
     ocrPulseTimer=setInterval(function(){
@@ -404,7 +434,18 @@
   function norm(ev){ var r=overlay.getBoundingClientRect(); var p=('touches' in ev && ev.touches.length)?ev.touches[0]:ev; var nx=(p.clientX-r.left)/r.width, ny=(p.clientY-r.top)/r.height; return {nx:Math.max(0,Math.min(1,nx)),ny:Math.max(0,Math.min(1,ny))}; }
   function hit(nx,ny){ var m=0.02, inBox=(nx>=roi.x && ny>=roi.y && nx<=roi.x+roi.w && ny<=roi.y+roi.h); function near(ax,ay){return Math.abs(nx-ax)<=m&&Math.abs(ny-ay)<=m;} if(near(roi.x,roi.y))return'nw'; if(near(roi.x+roi.w,roi.y))return'ne'; if(near(roi.x,roi.y+roi.h))return'sw'; if(near(roi.x+roi.w,roi.y+roi.h))return'se'; if(inBox)return'move'; return null; }
   function startDrag(ev){ if(!roi.show) return; var p=norm(ev); var mode=hit(p.nx,p.ny); if(!mode) return; if(ev.preventDefault) ev.preventDefault(); dragging={mode:mode, ox:p.nx, oy:p.ny, rx:roi.x, ry:roi.y, rw:roi.w, rh:roi.h}; }
-  function moveDrag(ev){ if(!dragging) return; var p=norm(ev), dx=p.nx-dragging.ox, dy=p.ny-dragging.oy, minW=0.08, minH=0.08; if(dragging.mode==='move'){ roi.x=Math.max(0,Math.min(1-dragging.rw,dragging.rx+dx)); roi.y=Math.max(0,Math.min(1-dragging.rh,dragging.ry+dy)); } else { var x=dragging.rx, y=dragging.ry, w=dragging.rw, h=dragging.rh; if(dragging.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(dragging.ry+dy,dragging.ry+dragging.rh-minH)); h=(dragging.ry+dragging.rh)-y; } if(dragging.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-dragging.ry,dragging.rh+dy)); } if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(dragging.rx+dx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; } if(dragging.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-dragging.rx,dragging.rw+dx)); } roi.x=x; roi.y=y; roi.w=w; roi.h=h; } lastOCRBoxes=[]; drawROI(); if(ev.preventDefault) ev.preventDefault(); }
+  function moveDrag(ev){ if(!dragging) return; var p=norm(ev), dx=p.nx-dragging.ox, dy=p.ny-dragging.oy, minW=0.08, minH=0.08;
+    if(dragging.mode==='move'){ roi.x=Math.max(0,Math.min(1-dragging.rw,dragging.rx+dx)); roi.y=Math.max(0,Math.min(1-dragging.rh,dragging.ry+dy)); }
+    else {
+      var x=dragging.rx, y=dragging.ry, w=dragging.rw, h=dragging.rh;
+      if(dragging.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(dragging.ry+dy,dragging.ry+dragging.rh-minH)); h=(dragging.ry+dragging.rh)-y; }
+      if(dragging.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-dragging.ry,dragging.rh+dy)); }
+      if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(dragging.rx+dx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; }
+      if(dragging.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-dragging.rx,dragging.rw+dx)); }
+      roi.x=x; roi.y=y; roi.w=w; roi.h=h;
+    }
+    lastOCRBoxes=[]; drawROI(); if(ev.preventDefault) ev.preventDefault();
+  }
   function endDrag(ev){ if(!dragging) return; dragging=null; if(ev.preventDefault) ev.preventDefault(); }
   overlay.addEventListener('mousedown', startDrag); overlay.addEventListener('mousemove', moveDrag); window.addEventListener('mouseup', endDrag);
   overlay.addEventListener('touchstart', startDrag, {passive:false}); overlay.addEventListener('touchmove', moveDrag, {passive:false}); overlay.addEventListener('touchend', endDrag, {passive:false}); overlay.addEventListener('touchcancel', endDrag, {passive:false});
@@ -415,7 +456,7 @@
     tbody.innerHTML='';
     for(var i=0;i<data.length;i++){
       var r=data[i];
-      var photo=r.photo?'<img class="thumb" alt="photo" src="'+r.photo+'"/>':'';
+      var photo=r.photo?'<img class="thumb" alt="photo" src="'+r.photo+'"/>' : '';
       var tr=document.createElement('tr'); tr.dataset.id=r.id;
       tr.innerHTML='<td class="muted">'+(i+1)+'</td><td>'+esc(r.content)+'</td><td><span class="pill">'+esc(r.format||'')+'</span></td><td class="muted">'+esc(r.source||'')+'</td><td class="muted">'+esc(r.date||'')+'</td><td class="muted">'+esc(r.time||'')+'</td><td>'+(r.weight||'')+'</td><td>'+photo+'</td><td><span class="count">× '+(r.count||1)+'</span></td><td class="note-cell" contenteditable="true">'+esc(r.notes||'')+'</td><td><button type="button" data-act="edit" class="small">Edit</button> <button type="button" data-act="delete" class="small">Delete</button></td>';
       tbody.appendChild(tr);
@@ -443,7 +484,7 @@
   function rowsForExport(){ var out=[]; for(var i=0;i<data.length;i++){ var r=data[i]; out.push({"Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||"","Time":r.time||"","Weight":r.weight||"","Photo":r.photo?('photo-'+(r.id||'')+'.jpg'):"","Count":r.count||1,"Notes":r.notes||"","Timestamp":r.timestamp||""}); } return out; }
   function rowsForCsv(){ var out=[]; for(var i=0;i<data.length;i++){ var r=data[i]; out.push({"Content":r.content,"Format":r.format,"Source":r.source,"Date":r.date||"","Time":r.time||"","Weight":r.weight||"","Photo":r.photo||"","Count":r.count||1,"Notes":r.notes||"","Timestamp":r.timestamp||""}); } return out; }
   function download(blob,name){ var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},500); }
-  function exportCsv(){ var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; var out=[cols]; for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var v=r[cols[j]]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); } var csv=out.map(function(a){return a.join(',')}).join('\\n'); download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv'); }
+  function exportCsv(){ var rows=rowsForCsv(), cols=["Content","Format","Source","Date","Time","Weight","Photo","Count","Notes","Timestamp"]; var out=[cols]; for(var i=0;i<rows.length;i++){ var r=rows[i]; var line=[]; for(var j=0;j<cols.length;j++){ var k=cols[j]; var v=r[k]; v=(v==null?'':String(v)).replace(/\"/g,'\"\"'); line.push(/[\",\\n]/.test(v)?('\"'+v+'\"'):v); } out.push(line); } var csv=out.map(function(a){return a.join(',')}).join('\\n'); download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'qr-log-'+ts()+'.csv'); }
   function exportXlsx(){
     var rows=rowsForExport();
     if(window.XLSX){
@@ -477,7 +518,7 @@
     toast('Unsupported file type.');
   }
   function importCsvText(text){
-    var lines=text.split(/\r?\n/); if(!lines.length) return;
+    var lines=text.split(/\\r?\\n/); if(!lines.length) return;
     for(var i=1;i<lines.length;i++){
       var L=lines[i]; if(!L) continue;
       var cells=L.match(/("([^"]|"")*"|[^,]+)/g) || [];
@@ -513,7 +554,7 @@
         roi.hasText=/\S/.test(txt);
         lastOCRBoxes = boxes || [];
         drawROI();
-        var msg = txt.trim()? txt.trim().slice(0,120).replace(/\s+/g,' ') : '(no text)';
+        var msg = txt.trim()? txt.trim().slice(0,120).replace(/\\s+/g,' ') : '(no text)';
         toast('OCR sample: '+msg);
       });
     });
@@ -541,4 +582,5 @@
   }
 
   load(); render(); enumerateCams(); setTimeout(function(){ setStatus('Ready. Engines: BD → ZXing WASM → jsQR'); }, 0);
+
 })();
