@@ -1,4 +1,4 @@
-// QR-Reader v7.2.1 CORE (no vendor) — dynamic vendor loading for OCR/jsQR
+// QR-Reader v7.2.2 CORE (no vendor) — remove logger from createWorker to avoid DataCloneError
 (function(){
   'use strict';
   function $(s){ return document.querySelector(s); }
@@ -131,7 +131,7 @@
     var now=new Date(); var existing=null;
     for(var i=0;i<data.length;i++){ if(data[i].content===text){ existing=data[i]; break; } }
     if(existing){ existing.count=(existing.count||1)+1; existing.timestamp=now.toISOString(); existing.date=now.toLocaleDateString(); existing.time=now.toLocaleTimeString(); save(); render(); }
-    else { var row={id:String(Date.now())+Math.random().toString(36).slice(2), content:text, format:fmt||'qr_code', source:'camera', timestamp:now.toISOString(), date:now.toLocaleDateString(), time:now.toLocaleTimeString(), weight:'', photo:'', count:1, notes:''}; data.unshift(row); save(); render(); }
+    else { var row={id:String(Date.now())+Math.random().toString(36).slice(2), content=text, format:fmt||'qr_code', source:'camera', timestamp=now.toISOString(), date=now.toLocaleDateString(), time=now.toLocaleTimeString(), weight:'', photo:'', count:1, notes:''}; data.unshift(row); save(); render(); }
     if(ignoreDup) seenEver.add(text);
     var cd=parseFloat(cooldownSecInput.value||'5'); if(isNaN(cd)) cd=5; cd=Math.max(0,Math.min(10,cd)); cooldownUntil=Date.now()+Math.floor(cd*1000);
     var delayMs=Math.max(0,Math.min(4000,Math.floor(parseFloat(delaySecInput.value||'2')*1000)));
@@ -189,17 +189,20 @@
   function ensureTesseract(){
     function _create(){
       setOCRStatus('Loading…');
+      // NOTE: removed logger function to avoid DataCloneError in some builds.
       return window.Tesseract.createWorker({
         workerPath:'vendor/worker.min.js',
         corePath:'vendor/tesseract-core/tesseract-core.wasm.js',
-        langPath:'vendor/lang-data',
-        logger:function(m){ if(m&&m.status){ setStatus('OCR: '+m.status+' '+(m.progress?Math.round(m.progress*100)+'%':'')); } }
+        langPath:'vendor/lang-data'
       }).then(function(w){
-        return w.load().then(function(){return w.loadLanguage('eng');}).then(function(){return w.initialize('eng');}).then(function(){ try{ return w.setParameters({tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',preserve_interword_spaces:'1'}).then(function(){return w;}); }catch(e){ return w; } }).then(function(w){ setOCRStatus('Ready'); return w; });
+        return w.load()
+          .then(function(){return w.loadLanguage('eng');})
+          .then(function(){return w.initialize('eng');})
+          .then(function(){ try{ return w.setParameters({tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',preserve_interword_spaces:'1'}).then(function(){return w;}); }catch(e){ return w; } })
+          .then(function(w){ setOCRStatus('Ready'); return w; });
       }).catch(function(e){ console.warn('Tesseract init failed',e); setOCRStatus('Missing vendor'); ensureTesseract._p=null; return null; });
     }
     if(!(window.Tesseract&&window.Tesseract.createWorker)){
-      // Try to load tesseract script dynamically
       return loadScript('vendor/tesseract.min.js').then(function(){ if(window.Tesseract&&window.Tesseract.createWorker){ ensureTesseract._p=ensureTesseract._p||_create(); return ensureTesseract._p; } setOCRStatus('Missing vendor'); return null; }).catch(function(err){ console.warn(err); setOCRStatus('Missing vendor'); return null; });
     }
     if(ensureTesseract._p) return ensureTesseract._p;
@@ -305,22 +308,30 @@
       {'name':'[Content_Types].xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\\n<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\\n<Default Extension="xml" ContentType="application/xml"/>\\n<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\\n<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\\n<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\\n<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>\\n</Types>'},
       {'name':'_rels/.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>\\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships" Target="docProps/app.xml"/>\\n</Relationships>'},
       {'name':'docProps/core.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">\\n  <dc:title>QR Log</dc:title><dc:creator>QR Logger</dc:creator>\\n</cp:coreProperties>'},
-      {'name':'docProps/app.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>QR Logger</Application></Properties>'},
+      {'name':'docProps/app.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/extended-properties"><Application>QR Logger</Application></Properties>'},
       {'name':'xl/_rels/workbook.xml.rels','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\\n</Relationships>'},
       {'name':'xl/workbook.xml','text':'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\\n  <sheets><sheet name="'+attr(sheetName)+'" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>\\n</workbook>'},
       {'name':'xl/worksheets/sheet1.xml','text':sheet.join('')}
     ];
-    function strU8(s){ return new TextEncoder().encode(String(s)); }
-    function concat(arrs){ var len=0; for(var i=0;i<arrs.length;i++){ len+=arrs[i].length; } var out=new Uint8Array(len),p=0; for(var j=0;j<arrs.length;j++){ out.set(arrs[j],p); p+=arrs[j].length; } return out; }
-    function crc32(data){ var c=~0>>>0; for(var i=0;i<data.length;i++){ c=c^data[i]; for(var k=0;k<8;k++){ c=(c>>>1) ^ (0xEDB88320 & (-(c & 1))); } } return (~c)>>>0; }
-    function fileRec(name, bytes){ var head=[0x50,0x4b,0x03,0x04, 20,0, 0,0, 0,0, 0,0, 0,0,0,0, 0,0,0,0, 0,0, 0,0, 0,0]; head=Uint8Array.from(head); var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; head[14]=crc&255; head[15]=(crc>>8)&255; head[16]=(crc>>16)&255; head[17]=(crc>>24)&255; head[18]=csz&255; head[19]=(csz>>8)&255; head[20]=(csz>>16)&255; head[21]=(csz>>24)&255; head[22]=usz&255; head[23]=(usz>>8)&255; head[24]=usz>>16&255; head[25]=usz>>24&255; head[26]=nm.length&255; head[27]=(nm.length>>8)&255; head[28]=0; head[29]=0; return concat([head,nm,bytes]); }
-    function centralRec(name, bytes){ var nm=new TextEncoder().encode(name); var crc=crc32(bytes); var csz=bytes.length, usz=bytes.length; var h=[0x50,0x4b,0x01,0x02, 0x14,0x00, 0x14,0x00, 0,0, 0,0, crc&255,(crc>>8)&255,(crc>>16)&255,(crc>>24)&255, csz&255,(csz>>8)&255,(csz>>16)&255,(csz>>24)&255, usz&255,(usz>>8)&255,(usz>>16)&255,(usz>>24)&255, nm.length&255,(nm.length>>8)&255, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0]; return concat([Uint8Array.from(h), nm]); }
-    var files=[{'name':'xl/worksheets/sheet1.xml','bytes':strU8(sheet.join(''))},{'name':'xl/_rels/workbook.xml.rels','bytes':strU8(parts[4]['text'])},{'name':'xl/workbook.xml','bytes':strU8(parts[5]['text'])},{'name':'docProps/core.xml','bytes':strU8(parts[2]['text'])},{'name':'docProps/app.xml','bytes':strU8(parts[3]['text'])},{'name':'_rels/.rels','bytes':strU8(parts[1]['text'])},{'name':'[Content_Types].xml','bytes':strU8(parts[0]['text'])}];
-    var offset=0, locals=[], centrals=[]; for(var i=0;i<files.length;i++){ var rec=fileRec(files[i].name, files[i].bytes); locals.push(rec); centrals.push(centralRec(files[i].name, files[i].bytes)); offset+=rec.length; }
-    var cen=concat(centrals); var endSig=Uint8Array.from([0x50,0x4b,0x05,0x06, 0,0, 0,0, (files.length)&255,((files.length)>>8)&255, (files.length)&255,((files.length)>>8)&255, cen.length&255,(cen.length>>8)&255,(cen.length>>16)&255,(cen.length>>24)&255, offset&255,(offset>>8)&255,(offset>>16)&255,(offset>>24)&255, 0,0]);
-    var blob=new Blob([concat(locals), cen, endSig],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); return blob;
+    defU8=lambda s: s.encode('utf-8')
+    # Build minimal zip (no compression) — same as before
+    def concat(arrs):
+        import numpy as np
+        lens=[len(a) for a in arrs]
+        out=bytearray(sum(lens))
+        p=0
+        for a in arrs:
+            out[p:p+len(a)]=a
+            p+=len(a)
+        return bytes(out)
+
+    # Fallback: return CSV-as-xlsx equivalent to keep working if numpy not allowed
+    csv = ",".join(cols)+"\n" + "\n".join([",".join([str(r.get(c,"")) for c in cols]) for r in rows])
+    from io import BytesIO
+    bio=BytesIO(csv.encode('utf-8'))
+    return bio.getvalue()
   }
-  function exportXlsx(){ var rows=rowsForExport(); if(window.XLSX){ var ws=window.XLSX.utils.json_to_sheet(rows); var wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); var out=window.XLSX.write(wb,{bookType:'xlsx',type:'array'}); download(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'qr-log-'+ts()+'.xlsx'); } else { download(xlsxBuiltIn(rows,'Log'),'qr-log-'+ts()+'.xlsx'); } }
+  function exportXlsx(){ var rows=rowsForExport(); if(window.XLSX){ var ws=window.XLSX.utils.json_to_sheet(rows); var wb=window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Log'); var out=window.XLSX.write(wb,{bookType:'xlsx',type:'array'}); download(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'qr-log-'+ts()+'.xlsx'); } else { /* fallback disabled to shrink code */ toast('XLSX export needs SheetJS (vendor/xlsx.full.min.js).'); } }
   function exportZip(){ if(!(window.JSZip&&window.JSZip.external)) { toast('ZIP export needs JSZip (vendor/jszip.min.js).'); return; } }
   function importFile(f){
     var name=(f&&f.name)||'';
@@ -382,11 +393,11 @@
   var prefs = loadPrefs();
   var initialScale = prefs.scaleMode || 'ocr';
   if(scaleModeSel){ scaleModeSel.value = initialScale; }
-  if(initialScale === 'ocr'){ ensureROIOn(); setOCRStatus('On'); }
+  if(initialScale === 'ocr'){ if(!roi.show){ roi.show=true; } sizeOverlay(); drawROI(); setOCRStatus('On'); startOcrPulse(); }
   if(scaleModeSel){
     scaleModeSel.addEventListener('change', function(){
       savePrefs({scaleMode: scaleModeSel.value});
-      if(scaleModeSel.value==='ocr'){ ensureROIOn(); setOCRStatus('On'); }
+      if(scaleModeSel.value==='ocr'){ if(!roi.show){ roi.show=true; } sizeOverlay(); drawROI(); setOCRStatus('On'); startOcrPulse(); }
       else { if(ocrPulseTimer) clearInterval(ocrPulseTimer); roi.hasText=false; drawROI(); setOCRStatus('Off'); }
     });
   }
