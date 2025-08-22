@@ -1,20 +1,19 @@
-// QR-Reader v7.3.4a — DOM-ready hotfix (guards element lookups so #overlay exists before getContext)
+// QR-Reader v7.1.8 (vendor-less core test) — ES5, DOM-ready guard, multi-engine scan + robust Tesseract.
 (function(){
   'use strict';
-  function onReady(){
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  function init(){
     function $(s){ return document.querySelector(s); }
     var video=$('#video'), overlay=$('#overlay');
-    if(!video || !overlay){
-      console.error('[QR-Reader] Required elements missing: #video and/or #overlay not found. Ensure index.html has <video id="video"> and <canvas id="overlay">, or load app.js after DOM.');
-      return;
-    }
-    var octx = (overlay.getContext && overlay.getContext('2d',{willReadFrequently:true})) || overlay.getContext && overlay.getContext('2d') || null;
-    if(!octx){
-      console.error('[QR-Reader] Could not get 2D context from #overlay canvas.');
-      return;
-    }
+    if(!video || !overlay){ console.error('[QR-Reader] Missing #video or #overlay'); return; }
+    var octx=(overlay.getContext && overlay.getContext('2d',{willReadFrequently:true})) || overlay.getContext('2d');
+    if(!octx){ console.error('[QR-Reader] Could not get 2D context'); return; }
 
-    // === BEGIN original v7.3.4 code (with variables moved inside onReady) ===
     var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing'), enginePill=$('#scanEngine'), permStateEl=$('#permState');
     var cooldownSecInput=$('#cooldownSec'), ignoreDupChk=$('#ignoreDup'), resetDupBtn=$('#resetDup');
     var fileInput=$('#fileInput');
@@ -41,7 +40,7 @@
       clearTimeout(toastEl._t);
       toastEl._t=setTimeout(function(){ toastEl.style.display='none'; }, 1800);
     }
-    function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:data,seen:Array.isArray(seenEver)?seenEver:Array.from?Array.from(seenEver):(seenEver._m?Object.keys(seenEver._m):[])})); }catch(e){} }
+    function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:data,seen:Array.from?Array.from(seenEver):(seenEver._m?Object.keys(seenEver._m):[])})); }catch(e){} }
     function savePrefs(obj){ try { var p=loadPrefs(); for(var k in obj){ p[k]=obj[k]; } localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch(e){} }
     function loadPrefs(){ try { return JSON.parse(localStorage.getItem(PREF_KEY)||'{}'); } catch(e){ return {}; } }
     function load(){ try{ var p=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}'); data=p.rows||[]; var arr=p.seen||[]; for(var i=0;i<arr.length;i++){ if(seenEver.add) seenEver.add(arr[i]); else seenEver._m[arr[i]]=1; } }catch(e){ data=[]; } }
@@ -63,9 +62,8 @@
           } else if (window.ZXingWASM && typeof window.ZXingWASM.instantiate==='function'){
             if (!window.ZXingWASM._instantiating){
               window.ZXingWASM._instantiating = true;
-              return window.ZXingWASM.instantiate({locateFile:function(path){ return path && path.indexOf('.wasm')>=0 ? 'vendor/zxing_reader.wasm' : path; }}).then(function(){
-                ZXING_WASM_LOADED=true; return true;
-              }).catch(function(e){ console.warn('ZXingWASM instantiate failed', e); return false; });
+              return window.ZXingWASM.instantiate({locateFile:function(path){ return path && path.indexOf('.wasm')>=0 ? 'vendor/zxing_reader.wasm' : path; }}).then(function(){ ZXING_WASM_LOADED=true; return true; })
+                .catch(function(e){ console.warn('ZXingWASM instantiate failed', e); return false; });
             }
           }
         }catch(e){ console.warn('ZXingWASM config', e); }
@@ -79,17 +77,14 @@
     function ensureWorker(){
       if(ocr.ready || ocr.failedWorker) return Promise.resolve(ocr.ready);
       return ensureTesseract().then(function(ok){
-        if(!ok || !window.Tesseract || typeof window.Tesseract.createWorker!=='function'){
-          ocr.failedWorker = true; return false;
-        }
+        if(!ok || !window.Tesseract || typeof window.Tesseract.createWorker!=='function'){ ocr.failedWorker=true; return false; }
         var created;
         try{ created = window.Tesseract.createWorker(tesseractOpts()); }
-        catch(e){ console.warn('createWorker threw', e); ocr.failedWorker = true; return false; }
-
+        catch(e){ console.warn('createWorker threw', e); ocr.failedWorker=true; return false; }
         var prom = (created && typeof created.then==='function') ? created : Promise.resolve(created);
         return prom.then(function(w){
-          if(!w || typeof w.load!=='function'){ ocr.failedWorker = true; return false; }
-          ocr.worker = w;
+          if(!w || typeof w.load!=='function'){ ocr.failedWorker=true; return false; }
+          ocr.worker=w;
           return ocr.worker.load()
             .then(function(){ return ocr.worker.loadLanguage('eng'); })
             .then(function(){ return ocr.worker.initialize('eng'); })
@@ -430,7 +425,7 @@
         var x=dragging.rx, y=dragging.ry, w=dragging.rw, h=dragging.rh;
         if(dragging.mode.indexOf('n')>=0){ y=Math.max(0,Math.min(dragging.ry+dy,dragging.ry+dragging.rh-minH)); h=(dragging.ry+dragging.rh)-y; }
         if(dragging.mode.indexOf('s')>=0){ h=Math.max(minH,Math.min(1-dragging.ry,dragging.rh+dy)); }
-        if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(dragging.rx+dx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; }
+        if(dragging.mode.indexOf('w')>=0){ x=Math.max(0,Math.min(1-dragging.rx,dragging.rx+dragging.rw-minW)); w=(dragging.rx+dragging.rw)-x; }
         if(dragging.mode.indexOf('e')>=0){ w=Math.max(minW,Math.min(1-dragging.rx,dragging.rw+dx)); }
         roi.x=x; roi.y=y; roi.w=w; roi.h=h;
       }
@@ -567,12 +562,5 @@
     }
 
     load(); render(); enumerateCams(); setTimeout(function(){ setStatus('Ready. Engines: BD → ZXing WASM → jsQR'); }, 0);
-    // === END original ===
-  }
-
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', onReady);
-  } else {
-    onReady();
   }
 })();

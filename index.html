@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f172a">
-  <title>QR‑Reader v7.3.4</title>
+  <title>QR‑Reader v7.1.8</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
@@ -15,7 +15,7 @@
 <body>
   <header role="banner" aria-label="App header">
     <div class="brand">
-      <h1 aria-label="Application Title">QR‑Reader <small>v7.3.4</small></h1>
+      <h1 aria-label="Application Title">QR‑Reader <small>v7.1.8</small></h1>
       <div class="pills">
         <span id="scanEngine" class="pill">Engine: …</span>
         <span id="permState" class="pill">Permission: unknown</span>
@@ -28,13 +28,118 @@
   </header>
 
   <main>
-    <!-- (body unchanged; keep your existing content) -->
+    <section class="panel">
+      <h2>Capture</h2>
+      <div class="controls">
+        <div class="ctrl">
+          <label for="cameraSource">Source</label>
+          <select id="cameraSource" title="Choose input source">
+            <option value="camera" selected>Local Camera</option>
+            <option value="remote">Remote (stub)</option>
+            <option value="serial">Serial (stub)</option>
+          </select>
+        </div>
+
+        <div class="ctrl">
+          <label for="cameraSelect">Camera</label>
+          <select id="cameraSelect" title="Select a camera"></select>
+          <button id="refreshBtn" type="button" class="secondary" title="Refresh camera list">Refresh</button>
+        </div>
+
+        <div class="ctrl">
+          <label for="prefFacing">Facing</label>
+          <select id="prefFacing" title="Preferred facing">
+            <option value="environment">Environment</option>
+            <option value="user" selected>User</option>
+          </select>
+        </div>
+
+        <div class="ctrl">
+          <button id="permBtn" type="button" class="secondary">Request Permission</button>
+          <button id="startBtn" type="button" class="primary">Start Camera</button>
+          <button id="stopBtn" type="button" class="secondary">Stop</button>
+        </div>
+      </div>
+
+      <div class="video-wrap">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+
+      <div class="controls">
+        <div class="ctrl">
+          <label for="cooldownSec">Cooldown (s)</label>
+          <input id="cooldownSec" type="number" min="0" max="10" value="5" title="Cooldown seconds after a successful scan">
+        </div>
+        <div class="ctrl">
+          <label for="delaySec">Weight delay (s)</label>
+          <input id="delaySec" type="number" min="0" max="4" value="2" title="Delay before capturing weight/photo">
+        </div>
+        <div class="ctrl">
+          <label for="scaleMode">Scale source</label>
+          <select id="scaleMode" title="Choose scale source">
+            <option value="none">No scale</option>
+            <option value="ocr" selected>OCR from camera</option>
+          </select>
+        </div>
+        <div class="ctrl">
+          <button id="ocrToggle" type="button" class="secondary">Toggle OCR Box</button>
+          <button id="testOCR" type="button" class="secondary">Test OCR</button>
+        </div>
+        <div class="ctrl">
+          <label class="checkbox">
+            <input id="ignoreDup" type="checkbox" checked> Ignore duplicates
+          </label>
+          <button id="resetDup" type="button" class="secondary">Reset Duplicates</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Log</h2>
+      <div class="controls">
+        <div class="ctrl grow">
+          <label for="manualInput">Add manual</label>
+          <input id="manualInput" type="text" placeholder="Type content and press Add" title="Manual add">
+          <button id="addManualBtn" type="button" class="secondary">Add</button>
+        </div>
+        <div class="ctrl">
+          <input id="fileInput" type="file" accept=".csv,.xlsx,.xls" title="Import CSV/XLSX" style="display:none">
+          <button id="importFileBtn" type="button" class="secondary" aria-controls="fileInput">Import</button>
+          <button id="exportCsv" type="button" class="secondary">Export CSV</button>
+          <button id="exportXlsx" type="button" class="primary">Export Excel (.xlsx)</button>
+          <button id="exportZip" type="button" class="secondary">Export ZIP (CSV+Photos)</button>
+          <button id="clearBtn" type="button" class="secondary" title="Clear all rows">Clear</button>
+        </div>
+      </div>
+
+      <div class="table-wrap" role="region" aria-label="Scan log">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Content</th>
+              <th>Format</th>
+              <th>Source</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Weight (g)</th>
+              <th>Photo</th>
+              <th>Count</th>
+              <th>Notes</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <div id="toast" role="status" aria-live="polite"></div>
 
-  <script src="remote.js"></script>
-  <script src="serial.js"></script>
-  <script src="app.js"></script>
+  <script src="remote.js" defer></script>
+  <script src="serial.js" defer></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
