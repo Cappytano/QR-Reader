@@ -1,145 +1,142 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f172a">
-  <title>QR‑Reader v7.1.8</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/favicon.ico">
-  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>QR-Reader (7.1.9)</title>
+  <meta name="theme-color" content="#0f172a"/>
+  <meta name="color-scheme" content="dark light"/>
+  <link rel="manifest" href="manifest.webmanifest"/>
+  <link rel="icon" type="image/png" sizes="1x1" href="icons/icon-192.png"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <header role="banner" aria-label="App header">
-    <div class="brand">
-      <h1 aria-label="Application Title">QR‑Reader <small>v7.1.8</small></h1>
-      <div class="pills">
-        <span id="scanEngine" class="pill">Engine: …</span>
-        <span id="permState" class="pill">Permission: unknown</span>
-        <span id="ocrStatus" class="pill">OCR: Off</span>
+  <header>
+    <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <h1>QR-Reader</h1>
+        <div class="subtitle">v7.1.9 — OCR default-on (no scale), live status pill, ROI fixes, minimal core (no vendor)</div>
       </div>
-    </div>
-    <div class="status-wrap" role="status" aria-live="polite">
-      <span id="status">Loading…</span>
+      <div style="display:flex;gap:8px;min-width:520px;flex-wrap:wrap;justify-content:flex-end">
+        <span id="scanEngine" class="pill">Engine: Detecting…</span>
+        <span id="ocrStatus" class="pill">OCR: Off</span>
+        <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section class="panel">
-      <h2>Capture</h2>
-      <div class="controls">
-        <div class="ctrl">
-          <label for="cameraSource">Source</label>
-          <select id="cameraSource" title="Choose input source">
-            <option value="camera" selected>Local Camera</option>
-            <option value="remote">Remote (stub)</option>
-            <option value="serial">Serial (stub)</option>
+  <main class="wrap">
+    <div id="androidBanner" class="banner" style="display:none"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <div class="grid">
+      <section class="card"><div class="content">
+        <h2 style="margin:0 0 10px 0">Scanner</h2>
+
+        <div class="controls row" style="margin-bottom:8px">
+          <label class="sr-only" for="cameraSource">Camera source</label>
+          <select id="cameraSource" title="Camera source" class="tight">
+            <option value="local" selected>Local camera</option>
+            <option value="remote">Remote camera (WebRTC)</option>
+            <option value="serial">Phone via Serial/Bluetooth</option>
           </select>
+          <button id="remoteHostBtn" type="button" class="secondary">Create Session</button>
+          <input id="remoteCodeInput" class="tight" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Enter code to join" title="Pairing code"/>
+          <button id="remoteJoinBtn" type="button" class="secondary">Join</button>
         </div>
 
-        <div class="ctrl">
-          <label for="cameraSelect">Camera</label>
-          <select id="cameraSelect" title="Select a camera"></select>
-          <button id="refreshBtn" type="button" class="secondary" title="Refresh camera list">Refresh</button>
+        <div class="controls row" style="margin-bottom:8px">
+          <button id="connectSerial" type="button" class="secondary" title="Connect phone via Bluetooth/Serial (Windows COM port)">Connect Phone (Serial)</button>
+          <span id="serialState" class="muted"></span>
         </div>
 
-        <div class="ctrl">
-          <label for="prefFacing">Facing</label>
-          <select id="prefFacing" title="Preferred facing">
-            <option value="environment">Environment</option>
-            <option value="user" selected>User</option>
-          </select>
+        <div class="video-wrap">
+          <video id="video" playsinline webkit-playsinline muted></video>
+          <canvas id="overlay"></canvas>
         </div>
 
-        <div class="ctrl">
+        <div class="legend" style="margin-top:6px">
+          <span class="dot" style="background:#8b8b8b"></span> ROI active & no text |
+          <span class="dot" style="background:#22c55e"></span> OCR text detected
+        </div>
+
+        <div class="controls row" style="margin-top:12px">
           <button id="permBtn" type="button" class="secondary">Request Permission</button>
           <button id="startBtn" type="button" class="primary">Start Camera</button>
           <button id="stopBtn" type="button" class="secondary">Stop</button>
+          <button id="testOCR" type="button" class="secondary" title="Run one recognition now">Test OCR</button>
         </div>
-      </div>
 
-      <div class="video-wrap">
-        <video id="video" playsinline muted></video>
-        <canvas id="overlay"></canvas>
-      </div>
-
-      <div class="controls">
-        <div class="ctrl">
-          <label for="cooldownSec">Cooldown (s)</label>
-          <input id="cooldownSec" type="number" min="0" max="10" value="5" title="Cooldown seconds after a successful scan">
-        </div>
-        <div class="ctrl">
-          <label for="delaySec">Weight delay (s)</label>
-          <input id="delaySec" type="number" min="0" max="4" value="2" title="Delay before capturing weight/photo">
-        </div>
-        <div class="ctrl">
-          <label for="scaleMode">Scale source</label>
-          <select id="scaleMode" title="Choose scale source">
-            <option value="none">No scale</option>
-            <option value="ocr" selected>OCR from camera</option>
+        <div class="controls row" style="margin-top:8px">
+          <label class="sr-only" for="cameraSelect">Camera</label>
+          <select id="cameraSelect" title="Camera" aria-label="Camera device list" class="tight"></select>
+          <button id="refreshBtn" type="button" class="secondary" title="Refresh">Refresh</button>
+          <label class="sr-only" for="prefFacing">Preferred camera</label>
+          <select id="prefFacing" title="Preferred camera" aria-label="Preferred camera" class="tight">
+            <option value="environment">Prefer Back</option>
+            <option value="user">Prefer Front</option>
+            <option value="auto" selected>Auto</option>
           </select>
         </div>
-        <div class="ctrl">
-          <button id="ocrToggle" type="button" class="secondary">Toggle OCR Box</button>
-          <button id="testOCR" type="button" class="secondary">Test OCR</button>
-        </div>
-        <div class="ctrl">
-          <label class="checkbox">
-            <input id="ignoreDup" type="checkbox" checked> Ignore duplicates
-          </label>
-          <button id="resetDup" type="button" class="secondary">Reset Duplicates</button>
-        </div>
-      </div>
-    </section>
 
-    <section class="panel">
-      <h2>Log</h2>
-      <div class="controls">
-        <div class="ctrl grow">
-          <label for="manualInput">Add manual</label>
-          <input id="manualInput" type="text" placeholder="Type content and press Add" title="Manual add">
-          <button id="addManualBtn" type="button" class="secondary">Add</button>
+        <div class="controls row" style="margin-top:8px">
+          <label class="sr-only" for="scaleMode">Scale source</label>
+          <select id="scaleMode" title="Scale source" class="tight">
+            <option value="none">No scale</option>
+            <option value="ocr">OCR from camera</option>
+            <option value="hid">USB/HID scale</option>
+            <option value="ble">Bluetooth scale</option>
+          </select>
+          <label class="sr-only" for="delaySec">Scale delay seconds</label>
+          <input id="delaySec" type="number" min="0" max="4" step="0.1" value="2" title="Delay (seconds)" class="tight"/>
+          <button id="connectHID" type="button" class="secondary">Connect USB/HID</button>
+          <button id="connectBLE" type="button" class="secondary">Connect BLE</button>
+          <button id="ocrToggle" type="button" class="secondary">Toggle OCR Box</button>
         </div>
-        <div class="ctrl">
-          <input id="fileInput" type="file" accept=".csv,.xlsx,.xls" title="Import CSV/XLSX" style="display:none">
-          <button id="importFileBtn" type="button" class="secondary" aria-controls="fileInput">Import</button>
-          <button id="exportCsv" type="button" class="secondary">Export CSV</button>
+
+        <div class="controls row" style="margin-top:8px">
+          <label for="cooldownSec">Post‑scan pause (s)</label>
+          <input id="cooldownSec" class="tight" type="number" min="0" max="10" step="0.5" value="5"/>
+          <label><input id="ignoreDup" type="checkbox" checked/> Ignore duplicates</label>
+          <button id="resetDup" type="button" class="secondary">Reset duplicates</button>
+        </div>
+
+        <div class="controls row" style="margin-top:8px">
+          <label class="sr-only" for="manualInput">Manual entry</label>
+          <input id="manualInput" type="text" placeholder="Manual or keyboard scanner input (press Enter)"/>
+          <button id="addManualBtn" type="button">Add</button>
+        </div>
+
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="remoteStatus" class="muted" style="margin-top:4px"></div>
+        <div id="permState" class="muted" style="margin-top:4px"></div>
+      </div></section>
+
+      <section class="card"><div class="content">
+        <h2 style="margin:0 0 10px 0">Log</h2>
+        <div class="controls" style="margin-bottom:8px">
           <button id="exportXlsx" type="button" class="primary">Export Excel (.xlsx)</button>
+          <button id="exportCsv" type="button" class="secondary">Export CSV</button>
           <button id="exportZip" type="button" class="secondary">Export ZIP (CSV+Photos)</button>
+          <button id="importFileBtn" type="button" class="secondary" aria-controls="fileInput">Import (CSV+XLSX)</button>
+          <label for="fileInput" class="sr-only">Choose file to import</label>
+          <input id="fileInput" type="file" accept=".csv, .xlsx, .xls" title="Choose file" aria-label="Choose file" style="display:none"/>
           <button id="clearBtn" type="button" class="secondary" title="Clear all rows">Clear</button>
         </div>
-      </div>
-
-      <div class="table-wrap" role="region" aria-label="Scan log">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Content</th>
-              <th>Format</th>
-              <th>Source</th>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Weight (g)</th>
-              <th>Photo</th>
-              <th>Count</th>
-              <th>Notes</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="logBody"></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="card" style="max-height:55vh;overflow:auto">
+          <table id="logTable">
+            <thead><tr>
+              <th>#</th><th>Content</th><th>Format</th><th>Source</th><th>Date</th><th>Time</th><th>Weight (g)</th><th>Photo</th><th>Count</th><th>Notes</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="logBody"></tbody>
+          </table>
+        </div>
+      </div></section>
+    </div>
   </main>
 
-  <div id="toast" role="status" aria-live="polite"></div>
-
-  <script src="remote.js" defer></script>
-  <script src="serial.js" defer></script>
-  <script src="app.js" defer></script>
+  <script src="app.js"></script>
+  <script type="module" src="remote.js"></script>
 </body>
 </html>
