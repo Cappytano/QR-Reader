@@ -21,6 +21,7 @@
   var ocrPulseTimer=null;
   var seenEver = new Set();
   var detBoxes=[];
+  var ocrBoxes=[];
   var zxingReady=false, zxingAPI=null;
 
   function setStatus(t){ if(statusEl){ statusEl.textContent=t||''; } }
@@ -117,6 +118,17 @@
         var x=b.nx*cssW, y=b.ny*cssH, w=b.nw*cssW, h=b.nh*cssH;
         octx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));
         octx.strokeRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));
+      }
+      octx.restore();
+    }
+    if(ocrBoxes.length){
+      octx.save();
+      octx.lineWidth=1; octx.strokeStyle='rgba(239,68,68,0.95)'; octx.fillStyle='rgba(239,68,68,0.10)';
+      for(var j=0;j<ocrBoxes.length;j++){
+        var ob=ocrBoxes[j];
+        var ox=ob.nx*cssW, oy=ob.ny*cssH, ow=ob.nw*cssW, oh=ob.nh*cssH;
+        octx.fillRect(Math.round(ox),Math.round(oy),Math.round(ow),Math.round(oh));
+        octx.strokeRect(Math.round(ox),Math.round(oy),Math.round(ow),Math.round(oh));
       }
       octx.restore();
     }
@@ -416,21 +428,34 @@
   function startOcrPulse(){
     if(ocrPulseTimer) clearInterval(ocrPulseTimer);
     ocrPulseTimer=setInterval(function(){
-      if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; drawOverlay(); setOCRStatus('On (idle)'); return; }
-      if(!(video && video.readyState>=2)){ roi.hasText=false; drawOverlay(); setOCRStatus('Video not ready'); return; }
+      if(!(roi.show && (scaleModeSel && scaleModeSel.value==='ocr'))){ roi.hasText=false; ocrBoxes.length=0; drawOverlay(); setOCRStatus('On (idle)'); return; }
+      if(!(video && video.readyState>=2)){ roi.hasText=false; ocrBoxes.length=0; drawOverlay(); setOCRStatus('Video not ready'); return; }
       ensureTesseract().then(function(w){
-        if(!w){ roi.hasText=false; drawOverlay(); return; }
+        if(!w){ roi.hasText=false; ocrBoxes.length=0; drawOverlay(); return; }
         try{
-          var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; drawOverlay(); return; }
+          var snap=getRoiSnapshot(); if(!snap){ roi.hasText=false; ocrBoxes.length=0; drawOverlay(); return; }
           var pre=preprocessCanvas(snap);
           w.recognize(pre).then(function(res){
             var txt=(res&&res.data&&res.data.text)||'';
-            var has=/\\S/.test(txt);
+            var words=(res&&res.data&&res.data.words)||[];
+            ocrBoxes.length=0;
+            var sw=pre.width||1, sh=pre.height||1;
+            for(var i=0;i<words.length;i++){
+              var bb=words[i] && words[i].bbox;
+              if(bb){
+                var nx=roi.x + (bb.x0/sw)*roi.w;
+                var ny=roi.y + (bb.y0/sh)*roi.h;
+                var nw=((bb.x1-bb.x0)/sw)*roi.w;
+                var nh=((bb.y1-bb.y0)/sh)*roi.h;
+                ocrBoxes.push({nx:nx, ny:ny, nw:nw, nh:nh});
+              }
+            }
+            var has=/\S/.test(txt);
             roi.hasText=!!has;
             drawOverlay();
             setOCRStatus(has?'Text':'On');
           });
-        }catch(e){ roi.hasText=false; drawOverlay(); setOCRStatus('On'); }
+        }catch(e){ roi.hasText=false; ocrBoxes.length=0; drawOverlay(); setOCRStatus('On'); }
       });
     }, 1200);
   }
@@ -445,6 +470,7 @@
     } else {
       if(ocrPulseTimer) clearInterval(ocrPulseTimer);
       roi.hasText=false;
+      ocrBoxes.length=0;
       setOCRStatus('Off');
       drawOverlay();
     }
