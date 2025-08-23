@@ -318,13 +318,36 @@
     var MAXW=960, scale=vw>MAXW?(MAXW/vw):1, sw=(vw*scale)|0, sh=(vh*scale)|0;
     zxCanvas.width=sw; zxCanvas.height=sh; zxCtx.imageSmoothingEnabled=false; zxCtx.drawImage(video,0,0,sw,sh);
     var id; try{ id=zxCtx.getImageData(0,0,sw,sh);}catch(_e){ scanTimer=setTimeout(loopZXing,160); return; }
+    var res=null;
     if(zxingAPI && typeof zxingAPI.readBarcodeFromImageData === 'function'){
-      try{
-        if(!(autoLogChk && !autoLogChk.checked) && !inCooldown()){
-          var res=zxingAPI.readBarcodeFromImageData(id, { tryHarder:true });
-          if(res && res.text){ handleDetection(res.text, res.format||'zxing'); }
-        }
-      }catch(_e){}
+      try{ res=zxingAPI.readBarcodeFromImageData(id, { tryHarder:true }); }catch(_e){}
+    }
+    if(res){
+      var wantBoxes = (showBoxesChk && showBoxesChk.checked) || (autoLogChk && !autoLogChk.checked);
+      if(wantBoxes){
+        try{
+          var pts=[], pos=res.position;
+          if(pos){
+            if(pos.topLeft && pos.bottomRight){
+              pts=[pos.topLeft,pos.topRight,pos.bottomLeft,pos.bottomRight];
+            }else if('x' in pos && 'y' in pos){
+              var w=(pos.width||1), h=(pos.height||1);
+              pts=[{x:pos.x,y:pos.y},{x:pos.x+w,y:pos.y},{x:pos.x,y:pos.y+h},{x:pos.x+w,y:pos.y+h}];
+            }
+          }
+          if(!pts.length && Array.isArray(res.cornerPoints)){ pts=res.cornerPoints; }
+          if(!pts.length && Array.isArray(res.resultPoints)){ pts=res.resultPoints; }
+          if(pts.length){
+            var xs=pts.map(function(p){return p.x;}), ys=pts.map(function(p){return p.y;});
+            var x=Math.min.apply(null,xs), y=Math.min.apply(null,ys);
+            var w=Math.max.apply(null,xs)-x, h=Math.max.apply(null,ys)-y;
+            detBoxes.push({nx:(x/sw), ny:(y/sh), nw:(w||1)/sw, nh:(h||1)/sh});
+          }
+        }catch(_e){}
+      }
+      if(!(autoLogChk && !autoLogChk.checked) && !inCooldown() && res.text){
+        handleDetection(res.text, res.format||'zxing');
+      }
     }
     drawOverlay();
     var delay = (showBoxesChk && showBoxesChk.checked) || (autoLogChk && !autoLogChk.checked) ? 200 : (inCooldown()?260:160);
