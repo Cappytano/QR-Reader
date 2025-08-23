@@ -601,14 +601,17 @@
     toast('Unsupported file type.');
   }
   function importCsvText(text){
-    var lines=text.split(/\\r?\\n/); if(!lines.length) return;
-    var cols=lines[0].split(',');
+    var lines=text.split(/\r?\n/); if(!lines.length) return;
+    var headers=(lines[0].match(/("([^"\n]|"")*"|[^,]+)/g) || []);
+    for(var h=0;h<headers.length;h++){ var hv=headers[h]; if(/^".*"$/.test(hv)) headers[h]=hv.slice(1,-1).replace(/""/g,'"'); }
+    var map={}; for(var m=0;m<headers.length;m++) map[headers[m].toLowerCase()]=m;
     for(var i=1;i<lines.length;i++){
       var L=lines[i]; if(!L) continue;
-      var cells=L.match(/("([^"]|"")*"|[^,]+)/g) || [];
+      var cells=L.match(/("([^"\n]|"")*"|[^,]+)/g) || [];
       for(var j=0;j<cells.length;j++){ var v=cells[j]; if(/^".*"$/.test(v)) cells[j]=v.slice(1,-1).replace(/""/g,'"'); }
-      var obj={"Content":cells[0]||"","Format":cells[1]||"","Source":cells[2]||"","Date":cells[3]||"","Time":cells[4]||"","Weight":cells[5]||"","Photo":cells[6]||"","Count":cells[7]||"","Notes":cells[8]||"","Timestamp":cells[9]||""};
-      var row=upsert(obj.Content, obj.Format, obj.Source); row.date=obj.Date||row.date; row.time=obj.Time||row.time; row.weight=obj.Weight||row.weight; row.notes=obj.Notes||row.notes; row.timestamp=obj.Timestamp||row.timestamp;
+      function cell(name){ var idx=map[name]; return idx==null?'':(cells[idx]||''); }
+      var obj={"Content":cell('content'),"Format":cell('format'),"Source":cell('source'),"Date":cell('date'),"Time":cell('time'),"Weight":cell('weight'),"Photo":cell('photo'),"Count":cell('count'),"Notes":cell('notes'),"Timestamp":cell('timestamp')};
+      var row=upsert(obj.Content,obj.Format,obj.Source); row.date=obj.Date||row.date; row.time=obj.Time||row.time; row.weight=obj.Weight||row.weight; row.notes=obj.Notes||row.notes; row.timestamp=obj.Timestamp||row.timestamp;
     }
     save(); render(); setStatus('Imported CSV.');
   }
