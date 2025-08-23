@@ -5,7 +5,7 @@
 
   function $(s){ return document.querySelector(s); }
   var video=$('#video'), overlay=$('#overlay'), octx=overlay.getContext('2d',{willReadFrequently:true});
-  var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing'), enginePill=$('#scanEngine'), permStateEl=$('#permState');
+  var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing'), enginePill=$('#scanEngine'), permStateEl=$('#permState'), permPill=$('#permPill'), autoLogPill=$('#autoLogPill');
   var cooldownSecInput=$('#cooldownSec'), ignoreDupChk=$('#ignoreDup'), resetDupBtn=$('#resetDup'), autoLogChk=$('#autoLog'), showBoxesChk=$('#showBoxes');
   var fileInput=$('#fileInput');
   var delaySecInput=$('#delaySec'), scaleModeSel=$('#scaleMode');
@@ -60,9 +60,16 @@
     try{
       navigator.permissions.query({name:'camera'}).then(function(st){
         if(permStateEl){ permStateEl.textContent='Permission: '+st.state; }
-        st.onchange=function(){ if(permStateEl){ permStateEl.textContent='Permission: '+st.state; } };
+        if(permPill){ permPill.textContent='Permission: '+st.state; }
+        st.onchange=function(){
+          if(permStateEl){ permStateEl.textContent='Permission: '+st.state; }
+          if(permPill){ permPill.textContent='Permission: '+st.state; }
+        };
       });
     }catch(e){}
+  }
+  function updateAutoLog(){
+    if(autoLogPill){ autoLogPill.textContent='Auto-log: '+(autoLogChk && autoLogChk.checked ? 'On' : 'Off'); }
   }
   function enumerateCams(){
     if(!(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices)) return Promise.resolve([]);
@@ -452,6 +459,7 @@
 
   document.addEventListener('click', function(ev){ var t=ev.target; if(t && t.id==='ocrToggle') ocrToggle(); });
   if (showBoxesChk){ showBoxesChk.addEventListener('change', drawOverlay); }
+  if (autoLogChk){ autoLogChk.addEventListener('change', function(){ updateAutoLog(); drawOverlay(); }); }
 
   var dragging=null;
   function norm(ev){ var r=overlay.getBoundingClientRect(); var p=('touches' in ev && ev.touches.length)?ev.touches[0]:ev; var nx=(p.clientX-r.left)/r.width, ny=(p.clientY-r.top)/r.height; return {nx:Math.max(0,Math.min(1,nx)),ny:Math.max(0,Math.min(1,ny))}; }
@@ -678,6 +686,7 @@
 
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
 
+  updatePerm(); updateAutoLog();
   load(); render(); enumerateCams();
   startOcrPulse(); setOCRStatus('On (idle)');
   setStatus('Ready. Engines: BD→ZXing→jsQR. Add /vendor for ZXing/JSZip/OCR.');
