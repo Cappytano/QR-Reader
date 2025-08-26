@@ -700,9 +700,10 @@
           var ws=wb.Sheets[wb.SheetNames[0]];
           var rows=window.XLSX.utils.sheet_to_json(ws,{defval:''});
           for(var i=0;i<rows.length;i++){
-            var r=rows[i];
-            var row=upsert(r.Content||r.content||'', r.Format||r.format||'', r.Source||r.source||'');
-            row.date=r.Date||row.date; row.time=r.Time||row.time; row.weight=r.Weight||row.weight; row.notes=r.Notes||row.notes; row.timestamp=r.Timestamp||row.timestamp;
+            var r=rows[i], lower={};
+            for(var k in r) lower[k.toLowerCase()]=r[k];
+            var row=upsert(lower['content']||'', lower['format']||'', lower['source']||'');
+            row.date=lower['date']||row.date; row.time=lower['time']||row.time; row.weight=lower['weight']||row.weight; row.notes=lower['notes']||row.notes; row.timestamp=lower['timestamp']||row.timestamp;
           }
           save(); render(); setStatus('Imported XLSX.');
         };
