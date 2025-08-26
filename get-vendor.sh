@@ -8,10 +8,10 @@ get "https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.1/dist/reader/zxing_reader.wasm
 # jsQR
 get "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" "vendor/jsQR.js"
 # Tesseract.js + worker + core + language
-get "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" "vendor/tesseract.min.js"
-get "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js" "vendor/worker.min.js"
-get "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js" "vendor/tesseract-core/tesseract-core.wasm.js"
-get "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.wasm" "vendor/tesseract-core/tesseract-core.wasm.wasm"
+get "https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js" "vendor/tesseract.min.js"
+get "https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js" "vendor/worker.min.js"
+get "https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.1/tesseract-core.wasm.js" "vendor/tesseract-core/tesseract-core.wasm.js"
+get "https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.1/tesseract-core.wasm" "vendor/tesseract-core/tesseract-core.wasm"
 get "https://tessdata.projectnaptha.com/5/eng.traineddata.gz" "vendor/lang-data/eng.traineddata.gz"
 # SheetJS (XLSX)
 get "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" "vendor/xlsx.full.min.js"

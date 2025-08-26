@@ -13,10 +13,10 @@ Get-IfMissing "https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.1/dist/reader/zxing_r
 Get-IfMissing "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" "vendor/jsQR.js"
 
 # Tesseract.js + worker + core + language
-Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" "vendor/tesseract.min.js"
-Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js" "vendor/worker.min.js"
-Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js" "vendor/tesseract-core/tesseract-core.wasm.js"
-Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.wasm" "vendor/tesseract-core/tesseract-core.wasm.wasm"
+Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js" "vendor/tesseract.min.js"
+Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js" "vendor/worker.min.js"
+Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.1/tesseract-core.wasm.js" "vendor/tesseract-core/tesseract-core.wasm.js"
+Get-IfMissing "https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.1/tesseract-core.wasm" "vendor/tesseract-core/tesseract-core.wasm"
 Get-IfMissing "https://tessdata.projectnaptha.com/5/eng.traineddata.gz" "vendor/lang-data/eng.traineddata.gz"
 
 # SheetJS (XLSX)
