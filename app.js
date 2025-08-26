@@ -476,8 +476,10 @@
     return c;
   }
   function preprocessCanvas(src){
-    var c=document.createElement('canvas'); c.width=src.width; c.height=src.height;
-    var ctx=c.getContext('2d'); ctx.drawImage(src,0,0);
+    var scale=1;
+    if(src.width<320||src.height<320){ scale=src.width<160||src.height<160?3:2; }
+    var c=document.createElement('canvas'); c.width=src.width*scale; c.height=src.height*scale;
+    var ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false; ctx.drawImage(src,0,0,c.width,c.height);
     try{
       var img=ctx.getImageData(0,0,c.width,c.height);
       var d=img.data, n=d.length, thresh=160, contrast=1.15;
