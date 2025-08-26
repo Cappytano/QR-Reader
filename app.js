@@ -563,7 +563,21 @@ import { truncateFields } from './xlsx-truncate.js';
     }
   }
 
-  document.addEventListener('click', function(ev){ var t=ev.target; if(t && t.id==='ocrToggle') ocrToggle(); });
+  function testOCR(){
+    if(!(video && video.readyState>=2)){ toast('Video not ready'); return; }
+    ensureTesseract().then(function(w){
+      if(!w){ toast('Missing vendor'); return; }
+      var snap=getRoiSnapshot();
+      if(!snap){ toast('Video not ready'); return; }
+      var pre=preprocessCanvas(snap);
+      w.recognize(pre).then(function(res){
+        var txt=(res && res.data && res.data.text)||'';
+        var s=txt.trim();
+        toast(s?s:'No text');
+      }).catch(function(){ toast('OCR failed'); });
+    });
+  }
+  document.addEventListener('click', function(ev){ var t=ev.target; if(t && t.id==='ocrToggle') ocrToggle(); else if(t && t.id==='testOCR') testOCR(); });
   if (showBoxesChk){ showBoxesChk.addEventListener('change', drawOverlay); }
   if (autoLogChk){ autoLogChk.addEventListener('change', function(){ drawOverlay(); save(); updatePills(); }); }
   if (scaleModeSel){ scaleModeSel.addEventListener('change', save); }
