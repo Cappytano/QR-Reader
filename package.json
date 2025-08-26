@@ -4,6 +4,10 @@
   "version": "7.2.3",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^30.0.5"
   }
 }
