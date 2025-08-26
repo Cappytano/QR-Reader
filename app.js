@@ -427,14 +427,21 @@ import { truncateFields } from './xlsx-truncate.js';
     scanTimer=setTimeout(loopJsQR, delay);
   }
 
+  const lang='eng';
   function ensureTesseract(){
     if(!window.Tesseract){ setOCRStatus('No engine'); return Promise.resolve(null); }
     if(ensureTesseract._p) return ensureTesseract._p;
+    var l='eng';
+    if(Array.isArray(lang)){
+      l = lang.filter(function(v){ return typeof v==='string' && v.trim(); }).join('+') || 'eng';
+    }else if(typeof lang==='string' && lang.trim()){
+      l = lang;
+    }
     if(!window.Tesseract.createWorker){
       setOCRStatus('Ready');
       ensureTesseract._p = Promise.resolve({
         recognize:function(img){
-          return window.Tesseract.recognize(img,'eng',{
+          return window.Tesseract.recognize(img,l,{
             tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
             preserve_interword_spaces:'1',
             tessedit_pageseg_mode:'7',
@@ -451,8 +458,8 @@ import { truncateFields } from './xlsx-truncate.js';
       langPath:'vendor/lang-data'
     }).then(function(w){
       return w.load()
-        .then(function(){return w.loadLanguage('eng');})
-        .then(function(){return w.initialize('eng');})
+        .then(function(){return w.loadLanguage(l);})
+        .then(function(){return w.initialize(l);})
         .then(function(){
           try{ return w.setParameters({
             tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
@@ -465,11 +472,12 @@ import { truncateFields } from './xlsx-truncate.js';
         .then(function(w){ setOCRStatus('Ready'); return w; });
     }).catch(function(e){
       console.warn('Tesseract init failed', e);
+      ensureTesseract._p=null;
       if(window.Tesseract && window.Tesseract.recognize){
         setOCRStatus('Ready');
         return {
           recognize:function(img){
-            return window.Tesseract.recognize(img,'eng',{
+            return window.Tesseract.recognize(img,l,{
               tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
               preserve_interword_spaces:'1',
               tessedit_pageseg_mode:'7',
@@ -478,7 +486,7 @@ import { truncateFields } from './xlsx-truncate.js';
           }
         };
       }
-      setOCRStatus('Missing vendor'); ensureTesseract._p=null; return null;
+      setOCRStatus('Missing vendor'); return null;
     });
     return ensureTesseract._p;
   }
