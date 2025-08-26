@@ -36,10 +36,26 @@ import { truncateFields } from './xlsx-truncate.js';
   function esc(s){ if(s==null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function ts(){ return new Date().toISOString().slice(0,19).replace(/[:T]/g,'-'); }
 
-  function headExists(url){ return fetch(url,{method:'HEAD'}).then(function(r){return r.ok;}).catch(function(){return false;}); }
-  function loadScript(url){ return new Promise(function(resolve){ var s=document.createElement('script'); s.src=url; s.onload=function(){resolve(true)}; s.onerror=function(){resolve(false)}; document.head.appendChild(s); }); }
-  headExists('vendor/zxing-wasm-reader.iife.js').then(function(ok){
-    if(!ok) return false;
+  function headExists(url){
+    return fetch(url,{method:'HEAD'}).then(function(r){
+      // treat 200 OK as exists; 405 (method not allowed) may still mean the file exists
+      if(r.ok || r.status===405) return true;
+      return false;
+    }).catch(function(){
+      // If HEAD fails (e.g., file:// or CORS), assume the resource may exist and attempt to load
+      return true;
+    });
+  }
+  function loadScript(url){
+    return new Promise(function(resolve){
+      var s=document.createElement('script');
+      s.src=url;
+      s.onload=function(){resolve(true)};
+      s.onerror=function(){resolve(false)};
+      document.head.appendChild(s);
+    });
+  }
+  headExists('vendor/zxing-wasm-reader.iife.js').then(function(){
     return loadScript('vendor/zxing-wasm-reader.iife.js').then(function(ok2){
       if(ok2 && window.ZXingWASM && typeof ZXingWASM.prepareZXingModule==='function'){
         try{
@@ -51,8 +67,9 @@ import { truncateFields } from './xlsx-truncate.js';
       return ok2;
     });
   });
-  headExists('vendor/jszip.min.js').then(function(ok){ if(ok) loadScript('vendor/jszip.min.js'); });
-  headExists('vendor/jsQR.js').then(function(ok){ if(ok) loadScript('vendor/jsQR.js'); });
+  headExists('vendor/jszip.min.js').then(function(){ loadScript('vendor/jszip.min.js'); });
+  headExists('vendor/jsQR.js').then(function(){ loadScript('vendor/jsQR.js'); });
+  headExists('vendor/tesseract.min.js').then(function(){ loadScript('vendor/tesseract.min.js'); });
 
   function decideFacing(){
     var p=prefFacing.value;
