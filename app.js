@@ -323,6 +323,27 @@
     var res=null;
     if(zxingAPI && typeof zxingAPI.readBarcodeFromImageData === 'function'){
       try{ res=zxingAPI.readBarcodeFromImageData(id, { tryHarder:true }); }catch(_e){}
+    }else if(window.ZXingWASM && typeof ZXingWASM.decode==='function'){
+      try{
+        var out=ZXingWASM.decode(id.data, sw, sh);
+        if(out){
+          if(typeof out==='string'){ try{ out=JSON.parse(out); }catch(_ee){} }
+          if(typeof out==='string'){
+            res={text:out, format:'zxing'};
+          }else if(Array.isArray(out)){
+            res={text:out[0]||'', format:out[1]||'zxing'};
+          }else if(typeof out==='object'){
+            var txt=out.text||out.data||out.result||out[0];
+            var fmt=out.format||out.barcodeFormat||out.type||out[1]||'zxing';
+            if(txt){
+              res={text:txt, format:fmt};
+              if(out.position) res.position=out.position;
+              if(out.cornerPoints) res.cornerPoints=out.cornerPoints;
+              if(out.resultPoints) res.resultPoints=out.resultPoints;
+            }
+          }
+        }
+      }catch(_e){}
     }
     if(res){
       var wantBoxes = (showBoxesChk && showBoxesChk.checked) || (autoLogChk && !autoLogChk.checked);
