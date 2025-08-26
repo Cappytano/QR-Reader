@@ -5,7 +5,7 @@
 
   function $(s){ return document.querySelector(s); }
   var video=$('#video'), overlay=$('#overlay'), octx=overlay.getContext('2d',{willReadFrequently:true});
-  var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing'), enginePill=$('#scanEngine'), permStateEl=$('#permState');
+  var statusEl=$('#status'), cameraSelect=$('#cameraSelect'), prefFacing=$('#prefFacing'), enginePill=$('#scanEngine'), permStateEl=$('#permState'), permPillEl=$('#permPill'), autoLogPillEl=$('#autoLogPill');
   var cooldownSecInput=$('#cooldownSec'), ignoreDupChk=$('#ignoreDup'), resetDupBtn=$('#resetDup'), autoLogChk=$('#autoLog'), showBoxesChk=$('#showBoxes');
   var fileInput=$('#fileInput');
   var delaySecInput=$('#delaySec'), scaleModeSel=$('#scaleMode');
@@ -24,12 +24,14 @@
   var ocrBoxes=[];
   var zxingReady=false, zxingAPI=null;
   var focusDist={};
+  var permState='?';
 
   function setStatus(t){ if(statusEl){ statusEl.textContent=t||''; } }
   function setOCRStatus(t){ if(ocrStatus){ ocrStatus.textContent='OCR: '+t; } }
   function toast(t){ if(!toastEl) return; toastEl.textContent=t; toastEl.style.display='block'; clearTimeout(toastEl._t); toastEl._t=setTimeout(function(){toastEl.style.display='none';},1800); }
   function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:data,seen:Array.from(seenEver),autoLog:autoLogChk?autoLogChk.checked:true,scaleMode:scaleModeSel?scaleModeSel.value:'none',focusDistance:focusDist})); }catch(e){} }
   function load(){ try{ var raw=localStorage.getItem(STORAGE_KEY)||'{}'; var p=JSON.parse(raw); data=p.rows||[]; (p.seen||[]).forEach(function(v){seenEver.add(v)}); if(autoLogChk) autoLogChk.checked = p.autoLog!==false; if(scaleModeSel && p.scaleMode) scaleModeSel.value=p.scaleMode; focusDist=p.focusDistance||{}; }catch(e){ data=[]; focusDist={}; } }
+  function updatePills(){ if(permPillEl) permPillEl.textContent='Permission: '+permState; if(autoLogPillEl) autoLogPillEl.textContent='Auto-log: '+(autoLogChk&&autoLogChk.checked?'On':'Off'); if(permStateEl) permStateEl.textContent='Permission: '+permState; }
   function esc(s){ if(s==null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function ts(){ return new Date().toISOString().slice(0,19).replace(/[:T]/g,'-'); }
 
@@ -58,13 +60,13 @@
     return {facingMode:{ideal:'user'}};
   }
   function updatePerm(){
-    if(!('permissions' in navigator)) return;
+    if(!('permissions' in navigator)){ permState='unknown'; updatePills(); return; }
     try{
       navigator.permissions.query({name:'camera'}).then(function(st){
-        if(permStateEl){ permStateEl.textContent='Permission: '+st.state; }
-        st.onchange=function(){ if(permStateEl){ permStateEl.textContent='Permission: '+st.state; } };
+        permState=st.state; updatePills();
+        st.onchange=function(){ permState=st.state; updatePills(); };
       });
-    }catch(e){}
+    }catch(e){ permState='error'; updatePills(); }
   }
   function enumerateCams(){
     if(!(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices)) return Promise.resolve([]);
@@ -507,7 +509,7 @@
 
   document.addEventListener('click', function(ev){ var t=ev.target; if(t && t.id==='ocrToggle') ocrToggle(); });
   if (showBoxesChk){ showBoxesChk.addEventListener('change', drawOverlay); }
-  if (autoLogChk){ autoLogChk.addEventListener('change', function(){ drawOverlay(); save(); }); }
+  if (autoLogChk){ autoLogChk.addEventListener('change', function(){ drawOverlay(); save(); updatePills(); }); }
   if (scaleModeSel){ scaleModeSel.addEventListener('change', save); }
 
   var dragging=null;
@@ -738,7 +740,7 @@
 
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
 
-  load(); render(); enumerateCams();
+  load(); render(); enumerateCams(); updatePills(); updatePerm();
   startOcrPulse(); setOCRStatus('On (idle)');
   setStatus('Ready. Engines: BD→ZXing→jsQR. Add /vendor for ZXing/JSZip/OCR.');
 })();
