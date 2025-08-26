@@ -462,7 +462,25 @@ import { truncateFields } from './xlsx-truncate.js';
           }).then(function(){return w;}); }
           catch(e){ return w; }
         })
-        .then(function(w){ setOCRStatus('Ready'); return w; });
+        .then(function(w){
+          var origRecognize = w.recognize.bind(w);
+          w.recognize = function(img){
+            return origRecognize(img).catch(function(err){
+              console.warn('Worker recognize failed, falling back', err);
+              if(window.Tesseract && window.Tesseract.recognize){
+                return window.Tesseract.recognize(img,'eng',{
+                  tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
+                  preserve_interword_spaces:'1',
+                  tessedit_pageseg_mode:'7',
+                  user_defined_dpi:'300'
+                });
+              }
+              throw err;
+            });
+          };
+          setOCRStatus('Ready');
+          return w;
+        });
     }).catch(function(e){
       console.warn('Tesseract init failed', e);
       if(window.Tesseract && window.Tesseract.recognize){
