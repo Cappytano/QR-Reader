@@ -1,3 +1,4 @@
+import { truncateFields } from './xlsx-truncate.js';
 
 // QR-Reader v7.2.3 CORE (no vendor) — fix chain-dot/syntax, keep Show Boxes, OCR ROI, Capture & Analyze, ZIP/XLSX/CSV
 (function(){
@@ -562,7 +563,21 @@
     }
   }
 
-  document.addEventListener('click', function(ev){ var t=ev.target; if(t && t.id==='ocrToggle') ocrToggle(); });
+  function testOCR(){
+    if(!(video && video.readyState>=2)){ toast('Video not ready'); return; }
+    ensureTesseract().then(function(w){
+      if(!w){ toast('Missing vendor'); return; }
+      var snap=getRoiSnapshot();
+      if(!snap){ toast('Video not ready'); return; }
+      var pre=preprocessCanvas(snap);
+      w.recognize(pre).then(function(res){
+        var txt=(res && res.data && res.data.text)||'';
+        var s=txt.trim();
+        toast(s?s:'No text');
+      }).catch(function(){ toast('OCR failed'); });
+    });
+  }
+  document.addEventListener('click', function(ev){ var t=ev.target; if(t && t.id==='ocrToggle') ocrToggle(); else if(t && t.id==='testOCR') testOCR(); });
   if (showBoxesChk){ showBoxesChk.addEventListener('change', drawOverlay); }
   if (autoLogChk){ autoLogChk.addEventListener('change', function(){ drawOverlay(); save(); updatePills(); }); }
   if (scaleModeSel){ scaleModeSel.addEventListener('change', save); }
@@ -645,6 +660,7 @@
   function exportXlsx(){
     var rows=rowsForExport();
     if(window.XLSX){
+      truncateFields(rows);
       var ws=window.XLSX.utils.json_to_sheet(rows);
       var wb=window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, 'Log');
