@@ -1,3 +1,3 @@
-test('basic arithmetic works', () => {
+test('basic arithmetic works', function() {
   expect(1 + 1).toBe(2);
 });
