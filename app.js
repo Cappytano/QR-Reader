@@ -407,8 +407,22 @@
   }
 
   function ensureTesseract(){
-    if(!(window.Tesseract&&window.Tesseract.createWorker)){ setOCRStatus('No engine'); return Promise.resolve(null); }
+    if(!window.Tesseract){ setOCRStatus('No engine'); return Promise.resolve(null); }
     if(ensureTesseract._p) return ensureTesseract._p;
+    if(!window.Tesseract.createWorker){
+      setOCRStatus('Ready');
+      ensureTesseract._p = Promise.resolve({
+        recognize:function(img){
+          return window.Tesseract.recognize(img,'eng',{
+            tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
+            preserve_interword_spaces:'1',
+            tessedit_pageseg_mode:'7',
+            user_defined_dpi:'300'
+          });
+        }
+      });
+      return ensureTesseract._p;
+    }
     setOCRStatus('Loading…');
     ensureTesseract._p = window.Tesseract.createWorker({
       workerPath:'vendor/worker.min.js',
@@ -419,12 +433,30 @@
         .then(function(){return w.loadLanguage('eng');})
         .then(function(){return w.initialize('eng');})
         .then(function(){
-          try{ return w.setParameters({tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',preserve_interword_spaces:'1'}).then(function(){return w;}); }
+          try{ return w.setParameters({
+            tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
+            preserve_interword_spaces:'1',
+            tessedit_pageseg_mode:'7',
+            user_defined_dpi:'300'
+          }).then(function(){return w;}); }
           catch(e){ return w; }
         })
         .then(function(w){ setOCRStatus('Ready'); return w; });
     }).catch(function(e){
       console.warn('Tesseract init failed', e);
+      if(window.Tesseract && window.Tesseract.recognize){
+        setOCRStatus('Ready');
+        return {
+          recognize:function(img){
+            return window.Tesseract.recognize(img,'eng',{
+              tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
+              preserve_interword_spaces:'1',
+              tessedit_pageseg_mode:'7',
+              user_defined_dpi:'300'
+            });
+          }
+        };
+      }
       setOCRStatus('Missing vendor'); ensureTesseract._p=null; return null;
     });
     return ensureTesseract._p;
