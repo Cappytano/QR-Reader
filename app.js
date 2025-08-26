@@ -179,11 +179,12 @@
         var stored=focusDist[id];
         focusSlider.min=min; focusSlider.max=max; focusSlider.step=step; focusSlider.value=(stored!==undefined?stored:(track.getSettings().focusDistance||mid));
         if(stored!==undefined){ track.applyConstraints({advanced:[{focusMode:'manual', focusDistance:stored}]}).catch(function(){/* ignore */}); }
-        if(focusInfo) focusInfo.textContent='manual';
+        if(focusInfo) focusInfo.textContent='manual: '+Number(focusSlider.value).toFixed(2);
         focusSlider.oninput=function(){
           var val=parseFloat(focusSlider.value);
           if(id) focusDist[id]=val;
           track.applyConstraints({advanced:[{focusMode:'manual', focusDistance:val}]}).catch(function(e){ setStatus('Focus apply failed: '+e.message); });
+          if(focusInfo) focusInfo.textContent='manual: '+val.toFixed(2);
           save();
         };
       } else if (caps.focusMode && caps.focusMode.indexOf && caps.focusMode.indexOf('manual')>=0){
@@ -212,6 +213,8 @@
     if(scanTimer) clearTimeout(scanTimer);
     try{ octx.clearRect(0,0,overlay.width,overlay.height); }catch(_e){}
     if(ocrPulseTimer) clearInterval(ocrPulseTimer);
+    if(focusWrap) focusWrap.style.display='none';
+    if(focusSlider) focusSlider.oninput=null;
     setOCRStatus('Off');
   }
 
