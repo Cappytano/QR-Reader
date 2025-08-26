@@ -438,17 +438,9 @@ import { truncateFields } from './xlsx-truncate.js';
       l = lang;
     }
     if(!window.Tesseract.createWorker){
-      setOCRStatus('Ready');
-      ensureTesseract._p = Promise.resolve({
-        recognize:function(img){
-          return window.Tesseract.recognize(img,l,{
-            tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
-            preserve_interword_spaces:'1',
-            tessedit_pageseg_mode:'7',
-            user_defined_dpi:'300'
-          });
-        }
-      });
+      setOCRStatus('Missing worker');
+      setStatus('Tesseract worker not available');
+      ensureTesseract._p = Promise.resolve(null);
       return ensureTesseract._p;
     }
     setOCRStatus('Loading…');
@@ -473,20 +465,9 @@ import { truncateFields } from './xlsx-truncate.js';
     }).catch(function(e){
       console.warn('Tesseract init failed', e);
       ensureTesseract._p=null;
-      if(window.Tesseract && window.Tesseract.recognize){
-        setOCRStatus('Ready');
-        return {
-          recognize:function(img){
-            return window.Tesseract.recognize(img,l,{
-              tessedit_char_whitelist:'0123456789. kgKGlbLBozOZ',
-              preserve_interword_spaces:'1',
-              tessedit_pageseg_mode:'7',
-              user_defined_dpi:'300'
-            });
-          }
-        };
-      }
-      setOCRStatus('Missing vendor'); return null;
+      setOCRStatus('Init failed');
+      setStatus('Tesseract initialization failed');
+      return null;
     });
     return ensureTesseract._p;
   }
