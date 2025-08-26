@@ -1,3 +1,4 @@
+import { truncateFields } from './xlsx-truncate.js';
 
 // QR-Reader v7.2.3 CORE (no vendor) — fix chain-dot/syntax, keep Show Boxes, OCR ROI, Capture & Analyze, ZIP/XLSX/CSV
 (function(){
@@ -645,6 +646,7 @@
   function exportXlsx(){
     var rows=rowsForExport();
     if(window.XLSX){
+      truncateFields(rows);
       var ws=window.XLSX.utils.json_to_sheet(rows);
       var wb=window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, 'Log');
