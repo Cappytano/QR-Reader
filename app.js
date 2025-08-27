@@ -454,8 +454,8 @@ import { truncateFields } from './xlsx-truncate.js';
     setOCRStatus('Loading…');
     ensureTesseract._p = window.Tesseract.createWorker({
       workerPath:'vendor/worker.min.js',
-      corePath:'vendor/tesseract-core/tesseract-core.wasm.js',
-      langPath:'vendor/lang-data'
+      corePath:'./tesseract-core/tesseract-core.wasm.js',
+      langPath:'./lang-data'
     }).then(function(w){
       return w.load()
         .then(function(){return w.loadLanguage(l);})
