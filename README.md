@@ -1,40 +1,29 @@
-# QR-Reader — v7.1.5 (Core only)
+# QR-Reader — v7.0.1
 
-This package includes all non-vendor files you need to deploy (GitHub Pages or localhost).
-**/vendor** libs must be added separately for scanning/OCR/Excel.
+Maintenance update: corrected vendor file guidance (ZXing browser UMD is `zxing-browser.min.js`).
 
-## Files
-- index.html
-- styles.css
-- app.js
-- remote.html
-- remote.js
-- manifest.webmanifest
-- sw.js
-- server.js
-- package.json
-- .nojekyll
-- icons/icon-192.png
-- icons/icon-512.png
+**Full edition**: Multi‑engine (BarcodeDetector → ZXing → jsQR), delayed scale weight + photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP export, CSV+XLSX import, remote camera (WebRTC scaffold), phone→PC (Web Serial), PWA, localhost server.
 
-## Expected `/vendor`
+## One-time vendor step (prevents 404s)
+Populate `/vendor` locally (no CDNs at runtime), then commit:
 ```
-vendor/
-  zxing-wasm-reader.iife.js
-  zxing_reader.wasm
-  jsQR.js
-  tesseract.min.js
-  worker.min.js
-  tesseract-core/
-    tesseract-core.wasm.js
-    tesseract-core.wasm
-  xlsx.full.min.js
-  lang-data/
-    eng.traineddata.gz
+Windows PowerShell: .\get-vendor.ps1
+macOS/Linux:       bash get-vendor.sh
+```
+This will create:
+```
+vendor/zxing.min.js
+vendor/zxing-browser.min.js
+vendor/jsQR.js
+vendor/tesseract.min.js
+vendor/xlsx.full.min.js
 ```
 
-## Run locally
-```bash
+## Local dev
+```
 npm i
 npm start   # http://localhost:8080
 ```
+
+## GitHub Pages
+Push all files (including `/vendor`). Enable Pages → deploy from branch root.

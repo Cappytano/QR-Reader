@@ -1,13 +1,12 @@
 {
   "name": "qr-reader",
+  "version": "7.0.1",
   "private": true,
-  "version": "7.2.3",
-  "type": "module",
+  "description": "QR-Reader full site",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "start": "node server.js"
   },
-  "devDependencies": {
-    "jest": "^30.0.5"
+  "dependencies": {
+    "express": "^4.19.2"
   }
 }
