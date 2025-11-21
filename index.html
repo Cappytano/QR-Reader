@@ -3,53 +3,24 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>QR-Reader (7.0.1)</title>
+  <title>QR-Reader (7.2.3)</title>
   <meta name="theme-color" content="#0f172a"/>
   <meta name="color-scheme" content="dark light"/>
   <link rel="manifest" href="manifest.webmanifest"/>
-  <link rel="icon" href="icons/icon-192.png"/>
-  <style>
-    :root{--bg:#0b1220;--panel:#0f172a;--muted:#94a3b8;--text:#e2e8f0;--accent:#22c55e;--border:#1f2937;--radius:16px}
-    *{box-sizing:border-box}html,body{height:100%}
-    body{margin:0;background:radial-gradient(1200px 800px at 10% -10%, #0c152a, var(--bg) 40%);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-    header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.85);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
-    .wrap{max-width:1180px;margin:0 auto;padding:16px}
-    h1{font-size:22px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-top:2px}
-    .grid{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:1100px){.grid{grid-template-columns:520px 1fr}}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);border-radius:var(--radius)}
-    .card .content{padding:16px}
-    .video-wrap{position:relative;border-radius:12px;overflow:hidden;background:#000}
-    video{width:100%;display:block}
-    .frame{position:absolute;inset:0;border:2px dashed rgba(255,255,255,.25);border-radius:12px;pointer-events:none}
-    .controls{display:flex;gap:8px;flex-wrap:wrap}.controls>*{flex:1 1 auto}
-    button,select,input,textarea{background:#0b1220;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
-    button{cursor:pointer}button.primary{background:linear-gradient(180deg,#1f7a3b,#14532d);border-color:#134e4a}button.secondary{background:linear-gradient(180deg,#0b2a64,#0b1f3a);border-color:#0b1f3a}
-    .status{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}.muted{color:var(--muted);font-size:12px}
-    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#0b2a64;border:1px solid #0b1f3a;color:#cfe1ff}
-    .banner{margin:12px 0;padding:10px 12px;border-radius:12px;border:1px solid #43320b;background:linear-gradient(180deg,rgba(255,170,0,.12),rgba(255,170,0,.06));color:#ffdd9a}
-    table{width:100%;border-collapse:collapse}thead th{position:sticky;top:0;background:#0e172a;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:.06em;color:#93a3b8;padding:10px 8px;text-align:left}
-    tbody td{border-bottom:1px solid var(--border);padding:8px;vertical-align:top;font-size:14px}
-    .note-cell[contenteditable="true"]{outline:1px dashed rgba(255,255,255,.15)}.count{display:inline-flex;gap:6px;background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:2px 8px;font-size:12px}
-    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,1px,1px);white-space:nowrap;border:0}
-    .thumb{width:64px;height:auto;border-radius:6px;border:1px solid var(--border)}
-    .small{padding:6px 9px;font-size:12px}
-    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row label{font-size:12px;color:var(--muted)}.row .tight{max-width:180px}
-  </style>
-  <!-- Local vendor files (commit these under /vendor) -->
-  <script src="vendor/zxing.min.js"></script>
-  <script src="vendor/zxing-browser.min.js"></script>
-  <script src="vendor/jsQR.js"></script>
-  <script src="vendor/tesseract.min.js"></script>
-  <script src="vendor/xlsx.full.min.js"></script>
+  <link rel="icon" type="image/png" sizes="1x1" href="icons/icon-192.png"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
   <header>
     <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <h1>QR-Reader</h1>
-        <div class="subtitle">Full: multi‑engine scan, delayed scale weight & photo (OCR/WebHID/WebBLE), CSV/XLSX/ZIP, CSV+XLSX import, remote camera, phone→PC (Serial)</div>
+        <div class="subtitle">v7.2.3 — Fix stray chain dot/syntax, keep Show Boxes toggle & all features</div>
       </div>
-      <div style="display:flex;gap:8px;min-width:420px">
+      <div style="display:flex;gap:8px;min-width:680px;flex-wrap:wrap;justify-content:flex-end">
+        <span id="scanEngine" class="pill">Engine: Detecting…</span>
+        <span id="ocrStatus" class="pill">OCR: Off</span>
         <button id="installBtn" type="button" class="secondary" style="display:none">Install App</button>
       </div>
     </div>
@@ -57,6 +28,7 @@
 
   <main class="wrap">
     <div id="androidBanner" class="banner" style="display:none"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
 
     <div class="grid">
       <section class="card"><div class="content">
@@ -74,21 +46,24 @@
           <button id="remoteJoinBtn" type="button" class="secondary">Join</button>
         </div>
 
-        <div class="controls row" style="margin-bottom:8px">
-          <button id="connectSerial" type="button" class="secondary" title="Connect phone via Bluetooth/Serial (Windows COM port)">Connect Phone (Serial)</button>
-          <span id="serialState" class="muted"></span>
-        </div>
-
         <div class="video-wrap">
           <video id="video" playsinline webkit-playsinline muted></video>
-          <canvas id="overlay" style="position:absolute;inset:0;pointer-events:none"></canvas>
-          <div class="frame" aria-hidden="true"></div>
+          <canvas id="overlay"></canvas>
         </div>
 
-        <div class="controls row" style="margin-top:12px">
+        <div class="legend" style="margin-top:6px">
+          <span class="dot" style="background:#8b8b8b"></span> ROI active & no text |
+          <span class="dot" style="background:#22c55e"></span> OCR text detected |
+          <span class="dot" style="background:#60a5fa"></span> Barcode preview box
+        </div>
+
+        <div class="controls row" style="margin-top:12px;align-items:center">
           <button id="permBtn" type="button" class="secondary">Request Permission</button>
           <button id="startBtn" type="button" class="primary">Start Camera</button>
           <button id="stopBtn" type="button" class="secondary">Stop</button>
+          <button id="captureBtn" type="button" class="secondary" title="Snapshot & analyze with all engines">Capture & Analyze</button>
+          <label style="display:flex;align-items:center;gap:6px"><input id="autoLog" type="checkbox" checked/> Auto Log</label>
+          <label style="display:flex;align-items:center;gap:6px"><input id="showBoxes" type="checkbox" checked/> Show boxes</label>
         </div>
 
         <div class="controls row" style="margin-top:8px">
@@ -101,13 +76,17 @@
             <option value="user">Prefer Front</option>
             <option value="auto" selected>Auto</option>
           </select>
-          <span id="scanEngine" class="pill" aria-live="polite">Engine: Detecting…</span>
+          <div id="focusWrap" class="row" style="align-items:center;gap:6px;display:none">
+            <label for="focusSlider">Focus</label>
+            <input id="focusSlider" type="range" min="0" max="1" step="0.01" value="0.5" class="tight"/>
+            <span id="focusInfo" class="muted"></span>
+          </div>
         </div>
 
         <div class="controls row" style="margin-top:8px">
           <label class="sr-only" for="scaleMode">Scale source</label>
           <select id="scaleMode" title="Scale source" class="tight">
-            <option value="none" selected>No scale</option>
+            <option value="none">No scale</option>
             <option value="ocr">OCR from camera</option>
             <option value="hid">USB/HID scale</option>
             <option value="ble">Bluetooth scale</option>
@@ -122,7 +101,8 @@
         <div class="controls row" style="margin-top:8px">
           <label for="cooldownSec">Post‑scan pause (s)</label>
           <input id="cooldownSec" class="tight" type="number" min="0" max="10" step="0.5" value="5"/>
-          <label><input id="ignoreDup" type="checkbox" checked/> Ignore duplicates during pause</label>
+          <label><input id="ignoreDup" type="checkbox" checked/> Ignore duplicates (global)</label>
+          <button id="resetDup" type="button" class="secondary">Reset duplicates</button>
         </div>
 
         <div class="controls row" style="margin-top:8px">
@@ -134,7 +114,7 @@
         <div id="status" class="status" role="status" aria-live="polite"></div>
         <div id="remoteStatus" class="muted" style="margin-top:4px"></div>
         <div id="permState" class="muted" style="margin-top:4px"></div>
-      </div></section>
+      </section></div>
 
       <section class="card"><div class="content">
         <h2 style="margin:0 0 10px 0">Log</h2>
@@ -150,7 +130,7 @@
         <div class="card" style="max-height:55vh;overflow:auto">
           <table id="logTable">
             <thead><tr>
-              <th>#</th><th>Content</th><th>Format</th><th>Source</th><th>Date</th><th>Time</th><th>Weight</th><th>Photo</th><th>Count</th><th>Notes</th><th>Actions</th>
+              <th>#</th><th>Content</th><th>Format</th><th>Source</th><th>Date</th><th>Time</th><th>Weight (g)</th><th>Photo</th><th>Count</th><th>Notes</th><th>Actions</th>
             </tr></thead>
             <tbody id="logBody"></tbody>
           </table>

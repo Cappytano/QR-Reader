@@ -1,12 +1,8 @@
 {
   "name": "qr-reader",
-  "version": "7.0.1",
   "private": true,
-  "description": "QR-Reader full site",
+  "version": "7.2.3",
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2"
   }
 }
